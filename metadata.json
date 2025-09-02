@@ -1,0 +1,5 @@
+{
+  "name": "ASL",
+  "description": "A football team and tournament management application, similar to CricHeroes, for organizing matches, tracking scores, and managing player stats.",
+  "requestFramePermissions": []
+}
