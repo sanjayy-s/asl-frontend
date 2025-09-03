@@ -1,7 +1,51 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
 import { PlayerPosition, PlayerProfile, MatchStatus, Team, User } from '../types';
 import { TrophyIcon, StarIcon } from './common/Icons';
+
+const fileToDataUri = (file: File, maxSize = 256): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+            if (!readerEvent.target?.result) {
+                return reject(new Error("Failed to read file."));
+            }
+            const image = new Image();
+            image.onload = () => {
+                const canvas = document.createElement('canvas');
+                let { width, height } = image;
+
+                if (width > height) {
+                    if (width > maxSize) {
+                        height = Math.round((height * maxSize) / width);
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width = Math.round((width * maxSize) / height);
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    return reject(new Error('Could not get canvas context'));
+                }
+                ctx.drawImage(image, 0, 0, width, height);
+                // Use JPEG for compression, 85% quality is a good balance
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                resolve(dataUrl);
+            };
+            image.onerror = reject;
+            image.src = readerEvent.target.result as string;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+};
 
 const ProfilePage: React.FC = () => {
   const { currentUser, updateProfile, teams, tournaments } = useAppContext();
@@ -19,27 +63,24 @@ const ProfilePage: React.FC = () => {
 
     tournaments.forEach(tournament => {
       tournament.matches.forEach(match => {
-        const teamA = match.teamAId as Team;
-        const teamB = match.teamBId as Team;
-        const isPlayerInMatch = (teamA.members as User[]).some(m => m._id === currentUser._id) || (teamB.members as User[]).some(m => m._id === currentUser._id);
+        const teamA = match.teamAId;
+        const teamB = match.teamBId;
+        const isPlayerInMatch = teamA.members.some(m => m._id === currentUser._id) || teamB.members.some(m => m._id === currentUser._id);
         
         if (isPlayerInMatch && match.status === MatchStatus.FINISHED) {
           matchesPlayed++;
         }
         
         match.goals.forEach(goal => {
-          // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-          if ((goal.scorerId as unknown as User)?._id === currentUser._id && !goal.isOwnGoal) {
+          if (goal.scorerId._id === currentUser._id && !goal.isOwnGoal) {
             goals++;
           }
-          // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-          if ((goal.assistId as unknown as User)?._id === currentUser._id) {
+          if (goal.assistId?._id === currentUser._id) {
             assists++;
           }
         });
 
-        // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-        if ((match.playerOfTheMatchId as unknown as User)?._id === currentUser._id) {
+        if (match.playerOfTheMatchId?._id === currentUser._id) {
           potm++;
         }
       });
@@ -69,15 +110,6 @@ const ProfilePage: React.FC = () => {
       reader.readAsDataURL(file);
     }
   };
-
-  const fileToDataUri = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-  }
 
   const handleSave = async () => {
     let updatedData = { ...formData };
@@ -114,7 +146,13 @@ const ProfilePage: React.FC = () => {
       
       <div className="flex flex-col md:flex-row items-center gap-6">
         <div className="relative">
-            <img src={formData.imageUrl || `https://picsum.photos/seed/${currentUser._id}/150`} alt="Profile" className="w-40 h-40 rounded-full border-4 border-green-500 object-cover"/>
+            {formData.imageUrl ? (
+                <img src={formData.imageUrl} alt="Profile" className="w-40 h-40 rounded-full border-4 border-green-500 object-cover"/>
+            ) : (
+                 <div className="w-40 h-40 rounded-full border-4 border-green-500 bg-gray-700 flex items-center justify-center">
+                    <span className="text-6xl font-bold text-gray-500">{formData.name?.charAt(0)}</span>
+                </div>
+            )}
             {isEditing && (
                  <div className="absolute bottom-0 right-0">
                     <label htmlFor="profile-pic-upload" className="bg-gray-900 p-2 rounded-full cursor-pointer hover:bg-gray-700">
@@ -165,7 +203,8 @@ const ProfilePage: React.FC = () => {
             </div>
           </div>
       </div>
-       <div className="mt-8 border-t border-gray-700 pt-6">
+      
+      <div className="mt-8 border-t border-gray-700 pt-6">
         <h2 className="text-2xl font-semibold mb-4">Career Statistics</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
             <div className="bg-gray-700 p-4 rounded-lg">

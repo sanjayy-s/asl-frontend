@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
@@ -158,11 +159,13 @@ const LiveScoringPage: React.FC = () => {
 
       <div className="grid grid-cols-3 items-start mb-8 text-center">
         <div className="flex flex-col items-center gap-2">
-          <img
-            src={teamA.logoUrl || `https://picsum.photos/seed/${teamA._id}/96`}
-            className="w-24 h-24 rounded-full object-cover"
-            alt={teamA.name}
-          />
+           {teamA.logoUrl ? (
+                <img src={teamA.logoUrl} className="w-24 h-24 rounded-full object-cover" alt={teamA.name} />
+           ) : (
+                <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center">
+                    <span className="text-4xl font-bold text-gray-500">{teamA.name.charAt(0)}</span>
+                </div>
+           )}
           <h2 className="text-2xl font-bold">{teamA.name}</h2>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             <button onClick={() => openGoalModal(teamA._id)} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg text-md"> + Goal </button>
@@ -173,11 +176,13 @@ const LiveScoringPage: React.FC = () => {
         <div className="text-6xl font-extrabold mt-12">{match.scoreA} - {match.scoreB}</div>
 
         <div className="flex flex-col items-center gap-2">
-          <img
-            src={teamB.logoUrl || `https://picsum.photos/seed/${teamB._id}/96`}
-            className="w-24 h-24 rounded-full object-cover"
-            alt={teamB.name}
-          />
+          {teamB.logoUrl ? (
+                <img src={teamB.logoUrl} className="w-24 h-24 rounded-full object-cover" alt={teamB.name} />
+           ) : (
+                <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center">
+                    <span className="text-4xl font-bold text-gray-500">{teamB.name.charAt(0)}</span>
+                </div>
+           )}
           <h2 className="text-2xl font-bold">{teamB.name}</h2>
            <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             <button onClick={() => openGoalModal(teamB._id)} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg text-md"> + Goal </button>

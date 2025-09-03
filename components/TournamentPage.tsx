@@ -1,15 +1,58 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
-// FIX: Cannot find name 'Tournament'. Added Tournament to imports.
 import { MatchStatus, Team, Match, User, Card, Goal, CardType, Tournament } from '../types';
 import { EditIcon, ClipboardCopyIcon, TrophyIcon, CardYellowIcon, CardRedIcon, FootballIcon } from './common/Icons';
 
 type Tab = 'fixtures' | 'table' | 'leaders' | 'teams';
 
+const fileToDataUri = (file: File, maxSize = 256): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+            if (!readerEvent.target?.result) {
+                return reject(new Error("Failed to read file."));
+            }
+            const image = new Image();
+            image.onload = () => {
+                const canvas = document.createElement('canvas');
+                let { width, height } = image;
+
+                if (width > height) {
+                    if (width > maxSize) {
+                        height = Math.round((height * maxSize) / width);
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width = Math.round((width * maxSize) / height);
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    return reject(new Error('Could not get canvas context'));
+                }
+                ctx.drawImage(image, 0, 0, width, height);
+                // Use JPEG for compression, 85% quality is a good balance
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                resolve(dataUrl);
+            };
+            image.onerror = reject;
+            image.src = readerEvent.target.result as string;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+};
+
 const TournamentPage: React.FC = () => {
     const { tournamentId } = useParams<{ tournamentId: string }>();
-    const { getTournamentById, currentUser, addTeamToTournament, scheduleMatches, startMatch, addMatchManually, updateMatchDetails, setPlayerOfTheMatch } = useAppContext();
+    const { getTournamentById, currentUser, addTeamToTournament, scheduleMatches, startMatch, addMatchManually, updateMatchDetails, setPlayerOfTheMatch, tournaments, updateTournament } = useAppContext();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
@@ -17,6 +60,7 @@ const TournamentPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('fixtures');
     const [teamIdToAdd, setTeamIdToAdd] = useState('');
     const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingMatch, setEditingMatch] = useState<Match | null>(null);
     const [potmModalMatch, setPotmModalMatch] = useState<Match | null>(null);
     const [newMatchData, setNewMatchData] = useState({ teamAId: '', teamBId: '', round: 'League Match' });
@@ -44,7 +88,7 @@ const TournamentPage: React.FC = () => {
             }
         };
         fetchTournamentData();
-    }, [tournamentId, getTournamentById]);
+    }, [tournamentId, getTournamentById, tournaments]);
 
     const isAdmin = currentUser?._id === tournament?.adminId;
 
@@ -54,8 +98,6 @@ const TournamentPage: React.FC = () => {
             setMessage({ type: result.success ? 'success' : 'error', text: result.message });
             if (result.success) {
                 setTeamIdToAdd('');
-                 const updated = await getTournamentById(tournamentId); // refetch
-                 if(updated) setTournament(updated);
             }
             setTimeout(() => setMessage({ type: '', text: '' }), 3000);
         }
@@ -80,7 +122,7 @@ const TournamentPage: React.FC = () => {
         return <div className="text-center text-red-500">{error || 'Tournament could not be loaded.'}</div>;
     }
     
-    const tournamentTeams = tournament.teams as Team[];
+    const tournamentTeams = tournament.teams;
 
     const handleManualMatchCreate = async () => {
         if(tournamentId && newMatchData.teamAId && newMatchData.teamBId && newMatchData.round && newMatchData.teamAId !== newMatchData.teamBId) {
@@ -115,9 +157,22 @@ const TournamentPage: React.FC = () => {
     return (
         <div className="bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg">
             <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
-                <img src={tournament.logoUrl || `https://picsum.photos/seed/${tournament._id}/150`} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover" />
-                <div>
-                    <h1 className="text-4xl font-bold">{tournament.name}</h1>
+                 {tournament.logoUrl ? (
+                    <img src={tournament.logoUrl} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover" />
+                ) : (
+                    <div className="w-24 h-24 rounded-full border-4 border-purple-500 bg-gray-700 flex items-center justify-center">
+                        <span className="text-4xl font-bold text-gray-500">{tournament.name.charAt(0)}</span>
+                    </div>
+                )}
+                <div className="flex-grow">
+                     <div className="flex items-center gap-4">
+                        <h1 className="text-4xl font-bold">{tournament.name}</h1>
+                        {isAdmin && (
+                            <button onClick={() => setIsEditModalOpen(true)} className="text-gray-400 hover:text-white" title="Edit Tournament Details">
+                                <EditIcon />
+                            </button>
+                        )}
+                    </div>
                     {isAdmin && (
                         <div className="mt-2">
                             <span className="text-gray-400">Invite Code: </span>
@@ -171,10 +226,11 @@ const TournamentPage: React.FC = () => {
             {activeTab === 'teams' && <TeamsTab teams={tournamentTeams} />}
             {activeTab === 'fixtures' && <FixturesTab matches={tournament.matches} isAdmin={isAdmin} tournamentId={tournament._id} startMatch={startMatch} onEditMatch={setEditingMatch} onSetPlayerOfTheMatch={setPotmModalMatch} />}
             {activeTab === 'table' && <PointsTableTab matches={tournament.matches} teams={tournamentTeams} />}
-            {activeTab === 'leaders' && <LeadersTab matches={tournament.matches} />}
+            {activeTab === 'leaders' && <LeadersTab matches={tournament.matches} teams={tournamentTeams} />}
 
             {editingMatch && <EditMatchModal match={editingMatch} teams={tournamentTeams} onClose={() => setEditingMatch(null)} onSave={handleUpdateMatch} />}
             {potmModalMatch && <PlayerOfTheMatchModal match={potmModalMatch} onClose={() => setPotmModalMatch(null)} onSave={handleSetPotm} />}
+            {isEditModalOpen && <EditTournamentModal tournament={tournament} onClose={() => setIsEditModalOpen(false)} onSave={updateTournament} />}
 
             {isMatchModalOpen && (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -239,7 +295,13 @@ const TeamsTab: React.FC<{ teams: Team[] }> = ({ teams }) => (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {teams.map(team => (
                 <Link to={`/team/${team._id}`} key={team._id} className="bg-gray-700 p-3 rounded text-center hover:bg-gray-600 transition-colors">
-                    <img src={team.logoUrl || `https://picsum.photos/seed/${team._id}/64`} className="w-16 h-16 rounded-full mx-auto mb-2 object-cover" alt={team.name} />
+                    {team.logoUrl ? (
+                         <img src={team.logoUrl} className="w-16 h-16 rounded-full mx-auto mb-2 object-cover" alt={team.name} />
+                    ) : (
+                        <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2">
+                             <span className="text-2xl font-bold text-gray-400">{team.name.charAt(0)}</span>
+                        </div>
+                    )}
                     <p className="font-semibold">{team.name}</p>
                 </Link>
             ))}
@@ -274,11 +336,10 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
             <h3 className="text-xl font-bold mb-4">Fixtures & Results</h3>
             <div className="space-y-3">
                 {matches.sort((a,b) => a.matchNumber - b.matchNumber).map(match => {
-                    const teamA = match.teamAId as Team;
-                    const teamB = match.teamBId as Team;
+                    const teamA = match.teamAId;
+                    const teamB = match.teamBId;
                     if (!teamA || !teamB) return null;
-                    // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                    const potm = match.playerOfTheMatchId ? (match.playerOfTheMatchId as unknown as User) : null;
+                    const potm = match.playerOfTheMatchId;
                     const timelineEvents = getTimelineEvents(match);
                     const hasPenalties = typeof match.penaltyScoreA === 'number' && typeof match.penaltyScoreB === 'number';
                     
@@ -302,7 +363,13 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                             </div>
                             <div className="flex items-center justify-between mt-2">
                                 <Link to={`/team/${teamA._id}`} className="flex items-center gap-3 w-2/5 hover:opacity-80">
-                                    <img src={teamA.logoUrl || `https://picsum.photos/seed/${teamA._id}/32`} className="w-8 h-8 rounded-full object-cover" alt={teamA.name}/>
+                                    {teamA.logoUrl ? (
+                                        <img src={teamA.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamA.name}/>
+                                    ) : (
+                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                            <span className="font-bold text-gray-400 text-sm">{teamA.name.charAt(0)}</span>
+                                        </div>
+                                    )}
                                     <span className={getTeamClasses(teamA._id, match)}>{teamA.name}</span>
                                 </Link>
                                 {match.status === MatchStatus.FINISHED ? (
@@ -323,7 +390,13 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                 )}
                                 <Link to={`/team/${teamB._id}`} className="flex items-center gap-3 w-2/5 justify-end hover:opacity-80">
                                     <span className={`${getTeamClasses(teamB._id, match)} text-right`}>{teamB.name}</span>
-                                    <img src={teamB.logoUrl || `https://picsum.photos/seed/${teamB._id}/32`} className="w-8 h-8 rounded-full object-cover" alt={teamB.name}/>
+                                    {teamB.logoUrl ? (
+                                        <img src={teamB.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamB.name}/>
+                                    ) : (
+                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                            <span className="font-bold text-gray-400 text-sm">{teamB.name.charAt(0)}</span>
+                                        </div>
+                                    )}
                                 </Link>
                                 {isAdmin && match.status === MatchStatus.SCHEDULED && (
                                     <button onClick={(e) => { e.stopPropagation(); handleStartMatch(match._id); }} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-sm ml-4">Start</button>
@@ -337,10 +410,8 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                             {timelineEvents.map((event, index) => {
                                                 if (event.eventType === 'goal') {
                                                     const goal = event as Goal & { eventType: 'goal' };
-                                                    // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                                                    const scorer = goal.scorerId as unknown as User;
-                                                    // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                                                    const assister = goal.assistId as unknown as User | undefined;
+                                                    const scorer = goal.scorerId;
+                                                    const assister = goal.assistId;
                                                     const benefitingTeam = goal.teamId === teamA._id ? teamA : teamB;
                                                     return (
                                                         <li key={`goal-${index}`} className="flex items-center gap-2">
@@ -350,8 +421,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                     );
                                                 } else {
                                                     const card = event as Card & { eventType: 'card' };
-                                                    // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                                                    const player = card.playerId as unknown as User;
+                                                    const player = card.playerId;
                                                     return (
                                                         <li key={`card-${index}`} className="flex items-center gap-2">
                                                             {card.type === CardType.YELLOW ? <CardYellowIcon /> : <CardRedIcon />}
@@ -373,7 +443,13 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                         <h4 className="font-bold mb-2 flex items-center gap-2"><TrophyIcon className="text-yellow-400 w-5 h-5" /> Player of the Match</h4>
                                         {potm ? (
                                             <Link to={`/player/${potm._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
-                                                <img src={potm.profile.imageUrl || `https://picsum.photos/seed/${potm._id}/40`} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
+                                                {potm.profile.imageUrl ? (
+                                                    <img src={potm.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
+                                                ) : (
+                                                     <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                                                        <span className="text-lg font-bold text-gray-400">{potm.profile.name.charAt(0)}</span>
+                                                    </div>
+                                                )}
                                                 <span className="font-bold">{potm.profile.name}</span>
                                             </Link>
                                         ) : (
@@ -404,34 +480,38 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
     const tableData = useMemo(() => {
         const stats: { [key: string]: { p: number, w: number, d: number, l: number, pts: number, gf: number, ga: number } } = {};
         teams.forEach(t => { stats[t._id] = { p: 0, w: 0, d: 0, l: 0, pts: 0, gf: 0, ga: 0 }; });
+        
+        const knockoutRounds = ['Final', 'Semi-Final', 'Quarter-Final', 'Eliminator'];
 
-        matches.filter(m => m.status === MatchStatus.FINISHED).forEach(m => {
-            const teamAId = (m.teamAId as Team)._id;
-            const teamBId = (m.teamBId as Team)._id;
-            
-            stats[teamAId].p++;
-            stats[teamBId].p++;
-            
-            stats[teamAId].gf += m.scoreA;
-            stats[teamAId].ga += m.scoreB;
-            stats[teamBId].gf += m.scoreB;
-            stats[teamBId].ga += m.scoreA;
+        matches
+            .filter(m => m.status === MatchStatus.FINISHED && !knockoutRounds.includes(m.round))
+            .forEach(m => {
+                const teamAId = m.teamAId._id;
+                const teamBId = m.teamBId._id;
+                
+                stats[teamAId].p++;
+                stats[teamBId].p++;
+                
+                stats[teamAId].gf += m.scoreA;
+                stats[teamAId].ga += m.scoreB;
+                stats[teamBId].gf += m.scoreB;
+                stats[teamBId].ga += m.scoreA;
 
-            if (m.scoreA > m.scoreB) { // A wins
-                stats[teamAId].w++;
-                stats[teamAId].pts += 3;
-                stats[teamBId].l++;
-            } else if (m.scoreB > m.scoreA) { // B wins
-                stats[teamBId].w++;
-                stats[teamBId].pts += 3;
-                stats[teamAId].l++;
-            } else { // Draw
-                stats[teamAId].d++;
-                stats[teamAId].pts++;
-                stats[teamBId].d++;
-                stats[teamBId].pts++;
-            }
-        });
+                if (m.winnerId === teamAId) { // A wins
+                    stats[teamAId].w++;
+                    stats[teamAId].pts += 3;
+                    stats[teamBId].l++;
+                } else if (m.winnerId === teamBId) { // B wins
+                    stats[teamBId].w++;
+                    stats[teamBId].pts += 3;
+                    stats[teamAId].l++;
+                } else { // Draw
+                    stats[teamAId].d++;
+                    stats[teamAId].pts++;
+                    stats[teamBId].d++;
+                    stats[teamBId].pts++;
+                }
+            });
 
         return teams.map(t => {
             const teamStats = stats[t._id];
@@ -465,7 +545,13 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
                             <td className="p-3">
                                 <Link to={`/team/${t._id}`} className="flex items-center gap-2 font-bold hover:opacity-80">
                                     <span className="w-6">{i+1}</span> 
-                                    <img src={t.logoUrl || `https://picsum.photos/seed/${t._id}/24`} alt={t.name} className="w-6 h-6 rounded-full object-cover"/> 
+                                    {t.logoUrl ? (
+                                        <img src={t.logoUrl} alt={t.name} className="w-6 h-6 rounded-full object-cover"/> 
+                                    ) : (
+                                        <div className="w-6 h-6 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                            <span className="font-bold text-gray-400 text-xs">{t.name.charAt(0)}</span>
+                                        </div>
+                                    )}
                                     {t.name}
                                 </Link>
                             </td>
@@ -483,48 +569,63 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
     );
 };
 
-const LeadersTab: React.FC<{ matches: Match[] }> = ({ matches }) => {
+const LeadersTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches, teams }) => {
     const { topScorers, topAssisters } = useMemo(() => {
-        const goalCounts: { [key: string]: number } = {};
-        const assistCounts: { [key: string]: number } = {};
+        const players = new Map<string, User>();
+        teams.forEach(team => team.members.forEach(member => players.set(member._id, member)));
+
+        const goalCounts: { [key: string]: { player: User, goals: number } } = {};
+        const assistCounts: { [key: string]: { player: User, assists: number } } = {};
 
         matches.forEach(m => {
             m.goals.forEach(g => {
-                // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                const scorer = g.scorerId as unknown as User;
-                // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-                const assister = g.assistId as unknown as User | undefined;
                 if (!g.isOwnGoal) {
-                    goalCounts[scorer._id] = (goalCounts[scorer._id] || 0) + 1;
+                    if (!goalCounts[g.scorerId._id]) goalCounts[g.scorerId._id] = { player: g.scorerId, goals: 0 };
+                    goalCounts[g.scorerId._id].goals++;
                 }
-                if(assister) {
-                    assistCounts[assister._id] = (assistCounts[assister._id] || 0) + 1;
+                if(g.assistId) {
+                    if (!assistCounts[g.assistId._id]) assistCounts[g.assistId._id] = { player: g.assistId, assists: 0 };
+                    assistCounts[g.assistId._id].assists++;
                 }
             });
         });
         
-        const topScorers = Object.entries(goalCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const topAssisters = Object.entries(assistCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        return { topScorers, topAssisters };
-    }, [matches]);
+        const sortedScorers = Object.values(goalCounts).sort((a, b) => b.goals - a.goals).slice(0, 10);
+        const sortedAssisters = Object.values(assistCounts).sort((a, b) => b.assists - a.assists).slice(0, 10);
+        return { topScorers: sortedScorers, topAssisters: sortedAssisters };
+    }, [matches, teams]);
 
-    const Leaderboard: React.FC<{title: string; data: [string, number][]}> = ({title, data}) => {
-        // This component structure assumes the parent will handle fetching the user data
-        // For simplicity, we assume user data might be available via a global cache or context
-        // In a real app, we might need to fetch users if they're not already loaded.
-        // The current implementation is simplified.
+    const Leaderboard: React.FC<{title: string; data: { player: User, [key: string]: any }[], metric: string}> = ({title, data, metric}) => {
         return (
-            <div>
-                <h4 className="text-lg font-bold mb-2">{title}</h4>
-                <p className="text-sm text-gray-400">Player data is not fully populated in this view.</p>
+            <div className="bg-gray-700 p-4 rounded-lg">
+                <h4 className="text-lg font-bold mb-3">{title}</h4>
+                <ul className="space-y-2">
+                    {data.map((item, index) => (
+                        <li key={item.player._id} className="flex items-center justify-between text-sm p-2 rounded-md bg-gray-800/50">
+                            <Link to={`/player/${item.player._id}`} className="flex items-center gap-3 hover:underline">
+                                <span className="font-bold w-6 text-center">{index + 1}</span>
+                                {item.player.profile.imageUrl ? (
+                                    <img src={item.player.profile.imageUrl} alt={item.player.profile.name} className="w-8 h-8 rounded-full object-cover"/>
+                                ) : (
+                                     <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                                        <span className="text-sm font-bold text-gray-400">{item.player.profile.name.charAt(0)}</span>
+                                    </div>
+                                )}
+                                <span>{item.player.profile.name}</span>
+                            </Link>
+                            <span className="font-extrabold text-lg text-green-400">{item[metric]}</span>
+                        </li>
+                    ))}
+                     {data.length === 0 && <p className="text-center text-gray-400 py-4">No data yet.</p>}
+                </ul>
             </div>
         );
     }
     
     return (
         <div className="grid md:grid-cols-2 gap-8">
-            <Leaderboard title="Top Goalscorers" data={topScorers} />
-            <Leaderboard title="Top Assists" data={topAssisters} />
+            <Leaderboard title="Top Goalscorers" data={topScorers} metric="goals" />
+            <Leaderboard title="Top Assists" data={topAssisters} metric="assists" />
         </div>
     );
 };
@@ -532,14 +633,14 @@ const LeadersTab: React.FC<{ matches: Match[] }> = ({ matches }) => {
 
 const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void; onSave: (details: Partial<Match>) => void;}> = ({ match, teams, onClose, onSave }) => {
     const [details, setDetails] = useState({
-        teamAId: (match.teamAId as Team)._id,
-        teamBId: (match.teamBId as Team)._id,
+        teamAId: match.teamAId,
+        teamBId: match.teamBId,
         date: match.date || '',
         time: match.time || '',
     });
 
     const handleSave = () => {
-        if(details.teamAId === details.teamBId) {
+        if(details.teamAId._id === details.teamBId._id) {
             alert("A team cannot play against itself.");
             return;
         }
@@ -563,13 +664,13 @@ const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-300">Team A</label>
-                <select value={details.teamAId} onChange={e => setDetails(d => ({...d, teamAId: e.target.value}))} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
+                <select value={details.teamAId._id} onChange={e => setDetails(d => ({...d, teamAId: teams.find(t=>t._id === e.target.value)!}))} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
                     {teams.map(team => <option key={team._id} value={team._id}>{team.name}</option>)}
                 </select>
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-300">Team B</label>
-                 <select value={details.teamBId} onChange={e => setDetails(d => ({...d, teamBId: e.target.value}))} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
+                 <select value={details.teamBId._id} onChange={e => setDetails(d => ({...d, teamBId: teams.find(t=>t._id === e.target.value)!}))} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
                     {teams.map(team => <option key={team._id} value={team._id}>{team.name}</option>)}
                 </select>
                 </div>
@@ -584,25 +685,11 @@ const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void
 };
 
 const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSave: (playerId: string) => void; }> = ({ match, onClose, onSave }) => {
-    // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-    const [selectedPlayerId, setSelectedPlayerId] = useState((match.playerOfTheMatchId as unknown as User)?._id || '');
+    const [selectedPlayerId, setSelectedPlayerId] = useState(match.playerOfTheMatchId?._id || '');
     
-    const { getTeamById, getUserById } = useAppContext();
-    const [players, setPlayers] = useState<User[]>([]);
-
-    useEffect(() => {
-        const fetchPlayers = async () => {
-            const teamA = await getTeamById((match.teamAId as Team)._id);
-            const teamB = await getTeamById((match.teamBId as Team)._id);
-            const teamAPlayers = (teamA?.members as User[]) || [];
-            const teamBPlayers = (teamB?.members as User[]) || [];
-            setPlayers([...teamAPlayers, ...teamBPlayers]);
-        };
-        fetchPlayers();
-    }, [match, getTeamById]);
-    
-    const teamA = match.teamAId as Team;
-    const teamB = match.teamBId as Team;
+    const teamA = match.teamAId;
+    const teamB = match.teamBId;
+    const players = useMemo(() => [...(teamA?.members || []), ...(teamB?.members || [])], [teamA, teamB]);
 
     const handleSave = () => {
         if (selectedPlayerId) {
@@ -617,7 +704,7 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSav
                 <p className="text-gray-400 mb-4">For match: {teamA?.name} vs {teamB?.name}</p>
                 <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
                     {players.map(player => {
-                        const playerTeam = (teamA?.members as User[]).some(m => m._id === player._id) ? teamA : teamB;
+                        const playerTeam = (teamA?.members || []).some(m => m._id === player._id) ? teamA : teamB;
                         return (
                             <label key={player._id} className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${selectedPlayerId === player._id ? 'bg-green-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
                                 <input 
@@ -628,7 +715,13 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSav
                                     onChange={(e) => setSelectedPlayerId(e.target.value)}
                                     className="sr-only"
                                 />
-                                <img src={player.profile.imageUrl || `https://picsum.photos/seed/${player._id}/40`} className="w-10 h-10 rounded-full object-cover" alt={player.profile.name}/>
+                                {player.profile.imageUrl ? (
+                                    <img src={player.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={player.profile.name}/>
+                                ) : (
+                                    <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                                         <span className="text-lg font-bold text-gray-400">{player.profile.name.charAt(0)}</span>
+                                    </div>
+                                )}
                                 <div>
                                     <p className="font-bold">{player.profile.name}</p>
                                     <p className="text-sm text-gray-300">{playerTeam?.name}</p>
@@ -646,5 +739,68 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSav
     );
 };
 
+const EditTournamentModal: React.FC<{ tournament: Tournament; onClose: () => void; onSave: (tournamentId: string, details: { name: string, logoUrl: string | null }) => Promise<void> }> = ({ tournament, onClose, onSave }) => {
+    const [name, setName] = useState(tournament.name);
+    const [logo, setLogo] = useState<File | null>(null);
+    const [logoPreview, setLogoPreview] = useState<string | null>(tournament.logoUrl);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setLogo(file);
+            setLogoPreview(URL.createObjectURL(file));
+        }
+    }
+
+    const handleSave = async () => {
+        setIsLoading(true);
+        let logoUrl = tournament.logoUrl;
+        if (logo) {
+            logoUrl = await fileToDataUri(logo);
+        }
+        await onSave(tournament._id, { name, logoUrl });
+        setIsLoading(false);
+        onClose();
+    };
+
+    return (
+         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+                <h3 className="text-xl font-bold mb-4">Edit Tournament Details</h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300">Tournament Name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full bg-gray-700 text-white p-2 rounded mt-1 border border-gray-600" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300">Tournament Logo</label>
+                        <div className="mt-2 flex items-center gap-4">
+                            {logoPreview ? (
+                                <img src={logoPreview} alt="Logo preview" className="w-16 h-16 rounded-full object-cover" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-full bg-gray-700 flex items-center justify-center">
+                                    <span className="text-2xl font-bold text-gray-500">{name.charAt(0)}</span>
+                                </div>
+                            )}
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleFileChange}
+                                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-600 file:text-white hover:file:bg-green-700"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-4 mt-6">
+                    <button onClick={onClose} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isLoading}>Cancel</button>
+                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isLoading}>
+                        {isLoading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default TournamentPage;

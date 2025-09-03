@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
@@ -46,27 +47,24 @@ const PlayerProfilePage: React.FC = () => {
 
     tournaments.forEach(tournament => {
       tournament.matches.forEach(match => {
-        const teamA = match.teamAId as Team;
-        const teamB = match.teamBId as Team;
-        const isPlayerInMatch = (teamA.members as User[]).some(m => m._id === player._id) || (teamB.members as User[]).some(m => m._id === player._id);
+        const teamA = match.teamAId;
+        const teamB = match.teamBId;
+        const isPlayerInMatch = teamA.members.some(m => m._id === player._id) || teamB.members.some(m => m._id === player._id);
         
         if (isPlayerInMatch && match.status === MatchStatus.FINISHED) {
           matchesPlayed++;
         }
         
         match.goals.forEach(goal => {
-          // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-          if ((goal.scorerId as unknown as User)?._id === player._id && !goal.isOwnGoal) {
+          if (goal.scorerId._id === player._id && !goal.isOwnGoal) {
             goals++;
           }
-          // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-          if ((goal.assistId as unknown as User)?._id === player._id) {
+          if (goal.assistId?._id === player._id) {
             assists++;
           }
         });
 
-        // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
-        if ((match.playerOfTheMatchId as unknown as User)?._id === player._id) {
+        if (match.playerOfTheMatchId?._id === player._id) {
           potm++;
         }
       });
@@ -83,7 +81,7 @@ const PlayerProfilePage: React.FC = () => {
     return <div className="text-center text-red-500 mt-10">{error || 'Player could not be loaded.'}</div>;
   }
   
-  const playerTeams = teams.filter(team => (team.members as User[]).some(m => m._id === player._id));
+  const playerTeams = teams.filter(team => team.members.some(m => m._id === player._id));
 
   return (
     <div className="bg-gray-800 p-6 rounded-lg shadow-lg max-w-4xl mx-auto">

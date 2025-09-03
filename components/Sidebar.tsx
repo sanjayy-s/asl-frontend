@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
@@ -66,7 +67,13 @@ const Sidebar: React.FC = () => {
                         {myTeams.map(team => (
                             <li key={team._id}>
                                 <NavLink to={`/team/${team._id}`} className={navLinkClasses}>
-                                    <img src={team.logoUrl || `https://picsum.photos/seed/${team._id}/30`} className="h-6 w-6 rounded-full object-cover" alt={team.name} />
+                                    {team.logoUrl ? (
+                                        <img src={team.logoUrl} className="h-6 w-6 rounded-full object-cover" alt={team.name} />
+                                    ) : (
+                                        <div className="h-6 w-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0">
+                                            <span className="text-xs font-bold text-gray-400">{team.name.charAt(0)}</span>
+                                        </div>
+                                    )}
                                     <span className="truncate">{team.name}</span>
                                 </NavLink>
                             </li>

@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
@@ -5,8 +6,8 @@ import { Match, MatchStatus, Team, Tournament, User } from '../types';
 
 const MatchCard: React.FC<{ match: Match }> = ({ match }) => {
     const { tournaments } = useAppContext();
-    const teamA = match.teamAId as Team;
-    const teamB = match.teamBId as Team;
+    const teamA = match.teamAId;
+    const teamB = match.teamBId;
 
     const tournament = tournaments.find(t => t.matches.some(m => m._id === match._id));
 
@@ -70,10 +71,10 @@ const MyMatchesPage: React.FC = () => {
         const allMatches: Match[] = [];
         tournaments.forEach(tourn => {
             tourn.matches.forEach(match => {
-                const teamA = match.teamAId as Team;
-                const teamB = match.teamBId as Team;
-                const isUserInTeamA = (teamA.members as User[]).some(m => m._id === currentUser._id);
-                const isUserInTeamB = (teamB.members as User[]).some(m => m._id === currentUser._id);
+                const teamA = match.teamAId;
+                const teamB = match.teamBId;
+                const isUserInTeamA = teamA.members.some(m => m._id === currentUser._id);
+                const isUserInTeamB = teamB.members.some(m => m._id === currentUser._id);
 
                 if (isUserInTeamA || isUserInTeamB) {
                     allMatches.push(match);

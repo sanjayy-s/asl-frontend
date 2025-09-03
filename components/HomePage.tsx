@@ -4,14 +4,48 @@ import { useAppContext } from '../hooks/useAppContext';
 import { UsersIcon, TrophyIcon, PlusIcon } from './common/Icons';
 import { Team } from '../types';
 
-const fileToDataUri = (file: File): Promise<string> => {
+const fileToDataUri = (file: File, maxSize = 256): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
+        reader.onload = (readerEvent) => {
+            if (!readerEvent.target?.result) {
+                return reject(new Error("Failed to read file."));
+            }
+            const image = new Image();
+            image.onload = () => {
+                const canvas = document.createElement('canvas');
+                let { width, height } = image;
+
+                if (width > height) {
+                    if (width > maxSize) {
+                        height = Math.round((height * maxSize) / width);
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width = Math.round((width * maxSize) / height);
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    return reject(new Error('Could not get canvas context'));
+                }
+                ctx.drawImage(image, 0, 0, width, height);
+                // Use JPEG for compression, 85% quality is a good balance
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                resolve(dataUrl);
+            };
+            image.onerror = reject;
+            image.src = readerEvent.target.result as string;
+        };
         reader.onerror = reject;
         reader.readAsDataURL(file);
     });
-}
+};
 
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
