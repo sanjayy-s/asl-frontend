@@ -1,8 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import { UsersIcon, TrophyIcon, PlusIcon } from './common/Icons';
 import { Team } from '../types';
+
+const fileToDataUri = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
@@ -20,7 +29,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
 };
 
 const HomePage: React.FC = () => {
-    const { currentUser, createTeam, joinTeam, createTournament, joinTournament, getTeamById } = useAppContext();
+    const { currentUser, createTeam, joinTeam, createTournament, joinTournament, teams } = useAppContext();
     const navigate = useNavigate();
     const [modal, setModal] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -28,30 +37,32 @@ const HomePage: React.FC = () => {
     
     // State for modals
     const [teamName, setTeamName] = useState('');
+    const [teamLogo, setTeamLogo] = useState<File | null>(null);
     const [teamCode, setTeamCode] = useState('');
     const [tournamentName, setTournamentName] = useState('');
+    const [tournamentLogo, setTournamentLogo] = useState<File | null>(null);
     const [tournamentCode, setTournamentCode] = useState('');
     const [selectedTeamId, setSelectedTeamId] = useState('');
 
-    const [myTeams, setMyTeams] = useState<Team[]>([]);
+    const myTeams = useMemo(() => {
+        if (!currentUser || !teams) return [];
+        return teams.filter(team =>
+            team.adminIds.includes(currentUser._id) ||
+            (team.members || []).some(member => (typeof member === 'string' ? member : member._id) === currentUser._id)
+        );
+    }, [currentUser, teams]);
 
-    useEffect(() => {
-        // Find all teams the user is a member of.
-        // In a real app this might be a dedicated API call.
-        const fetchUserTeams = async () => {
-             if (!currentUser) return;
-             // This is a simplified approach. A better one would be a dedicated endpoint /api/me/teams
-             // but for now we filter all teams fetched so far.
-             // Let's get all the teams the user is a member of by fetching them if not in state.
-            const userTeams: Team[] = [];
-            // This part is tricky without a dedicated endpoint. Let's assume for now that team data is fetched on login.
-            // Or better, we refetch all teams a user is a member of.
-            // For this app's logic, getTeamById populates the context, so we can iterate.
-            // This is still inefficient but demonstrates the logic.
-            // A more robust solution would be an endpoint `GET /api/me/teams`.
-        };
-        fetchUserTeams();
-    }, [currentUser, getTeamById]);
+    const resetTeamForm = () => {
+        setTeamName('');
+        setTeamLogo(null);
+        setError('');
+    }
+
+    const resetTournamentForm = () => {
+        setTournamentName('');
+        setTournamentLogo(null);
+        setError('');
+    }
 
 
     const handleCreateTeam = async (e: React.FormEvent) => {
@@ -60,9 +71,11 @@ const HomePage: React.FC = () => {
         setIsLoading(true);
         setError('');
         try {
-            const newTeam = await createTeam(teamName, null);
-            navigate(`/team/${newTeam._id}`);
+            const logoUrl = teamLogo ? await fileToDataUri(teamLogo) : null;
+            const newTeam = await createTeam(teamName, logoUrl);
+            resetTeamForm();
             setModal(null);
+            navigate(`/team/${newTeam._id}`);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -77,8 +90,9 @@ const HomePage: React.FC = () => {
         setError('');
         try {
             const joinedTeam = await joinTeam(teamCode);
-            navigate(`/team/${joinedTeam._id}`);
+            setTeamCode('');
             setModal(null);
+            navigate(`/team/${joinedTeam._id}`);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -92,9 +106,11 @@ const HomePage: React.FC = () => {
         setIsLoading(true);
         setError('');
         try {
-            const newTournament = await createTournament(tournamentName, null);
-            navigate(`/tournament/${newTournament._id}`);
+            const logoUrl = tournamentLogo ? await fileToDataUri(tournamentLogo) : null;
+            const newTournament = await createTournament(tournamentName, logoUrl);
+            resetTournamentForm();
             setModal(null);
+            navigate(`/tournament/${newTournament._id}`);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -113,8 +129,10 @@ const HomePage: React.FC = () => {
         try {
             const result = await joinTournament(tournamentCode, selectedTeamId);
             if (result.success && result.tournamentId) {
-                navigate(`/tournament/${result.tournamentId}`);
+                setTournamentCode('');
+                setSelectedTeamId('');
                 setModal(null);
+                navigate(`/tournament/${result.tournamentId}`);
             } else {
                 setError(result.message);
             }
@@ -152,8 +170,17 @@ const HomePage: React.FC = () => {
             </div>
 
             <Modal isOpen={modal === 'createTeam'} onClose={() => setModal(null)} title="Create a New Team">
-                <form onSubmit={handleCreateTeam}>
-                    <input type="text" placeholder="Team Name" value={teamName} onChange={e => setTeamName(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <form onSubmit={handleCreateTeam} className="space-y-4">
+                    <input type="text" placeholder="Team Name" value={teamName} onChange={e => setTeamName(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" required />
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300">Team Logo (Optional)</label>
+                        <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setTeamLogo(e.target.files ? e.target.files[0] : null)}
+                        className="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-600 file:text-white hover:file:bg-green-700"
+                        />
+                    </div>
                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     <button type="submit" disabled={isLoading} className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500">{isLoading ? 'Creating...' : 'Create Team'}</button>
                 </form>
@@ -161,15 +188,24 @@ const HomePage: React.FC = () => {
             
             <Modal isOpen={modal === 'joinTeam'} onClose={() => setModal(null)} title="Join a Team">
                  <form onSubmit={handleJoinTeam}>
-                    <input type="text" placeholder="Enter Team Invite Code" value={teamCode} onChange={e => setTeamCode(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" placeholder="Enter Team Invite Code" value={teamCode} onChange={e => setTeamCode(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" required />
                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     <button type="submit" disabled={isLoading} className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500">{isLoading ? 'Joining...' : 'Join Team'}</button>
                 </form>
             </Modal>
 
             <Modal isOpen={modal === 'createTournament'} onClose={() => setModal(null)} title="Create a New Tournament">
-                 <form onSubmit={handleCreateTournament}>
-                    <input type="text" placeholder="Tournament Name" value={tournamentName} onChange={e => setTournamentName(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                 <form onSubmit={handleCreateTournament} className="space-y-4">
+                    <input type="text" placeholder="Tournament Name" value={tournamentName} onChange={e => setTournamentName(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" required />
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300">Tournament Logo (Optional)</label>
+                        <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setTournamentLogo(e.target.files ? e.target.files[0] : null)}
+                        className="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-600 file:text-white hover:file:bg-green-700"
+                        />
+                    </div>
                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     <button type="submit" disabled={isLoading} className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500">{isLoading ? 'Creating...' : 'Create Tournament'}</button>
                 </form>
@@ -183,16 +219,18 @@ const HomePage: React.FC = () => {
                            value={selectedTeamId}
                            onChange={(e) => setSelectedTeamId(e.target.value)}
                            className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                           required
                         >
-                            <option value="">-- Choose a team --</option>
-                            {/* In a real app, `myTeams` would be populated from the context */}
-                            {/* For now, this will be empty until the team fetching logic is robust */}
-                            {/* Let's assume a placeholder for now */}
+                            <option value="" disabled>-- Choose a team --</option>
+                            {myTeams.map(team => (
+                                <option key={team._id} value={team._id}>{team.name}</option>
+                            ))}
                         </select>
+                         {myTeams.length === 0 && <p className="text-xs text-gray-400 mt-1">You must be a member of a team to join a tournament.</p>}
                     </div>
                     <div>
                          <label className="block text-sm font-medium text-gray-300 mb-1">Tournament Invite Code</label>
-                        <input type="text" placeholder="Enter Tournament Invite Code" value={tournamentCode} onChange={e => setTournamentCode(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        <input type="text" placeholder="Enter Tournament Invite Code" value={tournamentCode} onChange={e => setTournamentCode(e.target.value)} className="w-full bg-gray-700 text-white p-3 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500" required />
                     </div>
                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     <button type="submit" disabled={isLoading || !selectedTeamId} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500">{isLoading ? 'Joining...' : 'Join Tournament'}</button>

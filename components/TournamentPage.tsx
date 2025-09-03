@@ -280,6 +280,8 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                     // FIX: Conversion of type 'string' to type 'User' may be a mistake. Cast to unknown first.
                     const potm = match.playerOfTheMatchId ? (match.playerOfTheMatchId as unknown as User) : null;
                     const timelineEvents = getTimelineEvents(match);
+                    const hasPenalties = typeof match.penaltyScoreA === 'number' && typeof match.penaltyScoreB === 'number';
+                    
                     return (
                         <div 
                             key={match._id}
@@ -306,7 +308,10 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                 {match.status === MatchStatus.FINISHED ? (
                                      <div className="text-center">
                                         <div className="font-bold text-xl">{match.scoreA} - {match.scoreB}</div>
-                                        <div className="text-xs text-gray-400">{match.winnerId === null ? 'Draw' : 'Final'}</div>
+                                        <div className="text-xs text-gray-400">
+                                            {match.winnerId === null ? 'Draw' : 'Final'}
+                                            {hasPenalties && <span className="font-semibold text-gray-300"> (Pen {match.penaltyScoreA} - {match.penaltyScoreB})</span>}
+                                        </div>
                                     </div>
                                 ) : match.status === MatchStatus.LIVE ? (
                                     <div className="text-center text-red-500 animate-pulse">LIVE ({match.scoreA} - {match.scoreB})</div>
@@ -327,7 +332,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                              {viewingDetailsMatchId === match._id && (
                                 <div className="mt-4 border-t border-gray-600 pt-3 text-sm">
                                     <h4 className="font-bold mb-2">Match Timeline:</h4>
-                                    {timelineEvents.length > 0 ? (
+                                    {timelineEvents.length > 0 || hasPenalties ? (
                                         <ul className="space-y-1 text-gray-300">
                                             {timelineEvents.map((event, index) => {
                                                 if (event.eventType === 'goal') {
@@ -355,6 +360,12 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                     );
                                                 }
                                             })}
+                                            {hasPenalties && (
+                                                <li className="flex items-center gap-2 font-semibold pt-2 border-t border-gray-600/50 mt-2">
+                                                    <span className="font-bold text-yellow-400">🥅</span>
+                                                    <span>Penalty Shootout: {teamA.name} {match.penaltyScoreA} - {match.penaltyScoreB} {teamB.name}</span>
+                                                </li>
+                                            )}
                                         </ul>
                                     ) : <p className="text-gray-400">No events were recorded for this match.</p>}
                                     

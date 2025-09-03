@@ -31,7 +31,7 @@ interface AppContextType {
   updateMatchDetails: (tournamentId: string, matchId: string, details: Partial<Pick<Match, 'teamAId' | 'teamBId' | 'date' | 'time'>>) => Promise<void>;
   addMatchManually: (tournamentId: string, matchData: { teamAId: string, teamBId: string, round: string }) => Promise<void>;
   startMatch: (tournamentId: string, matchId: string) => Promise<void>;
-  endMatch: (tournamentId: string, matchId: string) => Promise<void>;
+  endMatch: (tournamentId: string, matchId: string, penaltyScores?: { penaltyScoreA: number, penaltyScoreB: number }) => Promise<void>;
   recordGoal: (tournamentId: string, matchId: string, scorerId: string, assistId?: string, isOwnGoal?: boolean) => Promise<void>;
   recordCard: (tournamentId: string, matchId: string, playerId: string, cardType: CardType) => Promise<void>;
   setPlayerOfTheMatch: (tournamentId: string, matchId: string, playerId: string) => Promise<void>;
@@ -290,8 +290,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updatedMatch = await apiRequest(`/tournaments/${tournamentId}/matches/${matchId}/status`, 'PATCH', { status: MatchStatus.LIVE }, token);
     updateAppContextStateWithMatch(tournamentId, updatedMatch);
   };
-  const endMatch = async (tournamentId: string, matchId: string) => {
-    const updatedMatch = await apiRequest(`/tournaments/${tournamentId}/matches/${matchId}/status`, 'PATCH', { status: MatchStatus.FINISHED }, token);
+  const endMatch = async (tournamentId: string, matchId: string, penaltyScores?: { penaltyScoreA: number, penaltyScoreB: number }) => {
+    const body = { status: MatchStatus.FINISHED, ...penaltyScores };
+    const updatedMatch = await apiRequest(`/tournaments/${tournamentId}/matches/${matchId}/status`, 'PATCH', body, token);
     updateAppContextStateWithMatch(tournamentId, updatedMatch);
   };
   const recordGoal = async (tournamentId: string, matchId: string, scorerId: string, assistId?: string, isOwnGoal?: boolean) => {

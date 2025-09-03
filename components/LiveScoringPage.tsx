@@ -62,14 +62,18 @@ const LiveScoringPage: React.FC = () => {
   const [cardPlayerId, setCardPlayerId] = useState('');
   const [cardType, setCardType] = useState<CardType>(CardType.YELLOW);
 
+  const [penaltyScores, setPenaltyScores] = useState<{ scoreA: string, scoreB: string }>({ scoreA: '', scoreB: '' });
+  const [endMatchError, setEndMatchError] = useState('');
+
+
   const modalTeamPlayers = useMemo(() => {
     const team = modalTeamId === teamA?._id ? teamA : teamB;
-    return team?.members || [];
+    return team?.members as User[] || [];
   }, [modalTeamId, teamA, teamB]);
   
   const opposingTeamPlayers = useMemo(() => {
     const team = modalTeamId === teamA?._id ? teamB : teamA;
-    return team?.members || [];
+    return team?.members as User[] || [];
   }, [modalTeamId, teamA, teamB]);
 
   const scorerPlayers = isOwnGoal ? opposingTeamPlayers : modalTeamPlayers;
@@ -116,11 +120,35 @@ const LiveScoringPage: React.FC = () => {
     setCardModalOpen(false);
   }
 
+  const isKnockout = ['Final', 'Semi-Final', 'Quarter-Final', 'Eliminator'].includes(match.round);
+  const needsPenalties = isKnockout && match.scoreA === match.scoreB;
+
   const handleConfirmEndMatch = async () => {
     if (!tournamentId || !matchId) return;
-    await endMatch(tournamentId, matchId);
-    setEndModalOpen(false);
-    navigate(`/tournament/${tournamentId}`);
+    
+    let penaltyPayload: { penaltyScoreA: number, penaltyScoreB: number } | undefined = undefined;
+    if (needsPenalties) {
+      const scoreA = parseInt(penaltyScores.scoreA, 10);
+      const scoreB = parseInt(penaltyScores.scoreB, 10);
+      if (isNaN(scoreA) || isNaN(scoreB) || scoreA < 0 || scoreB < 0) {
+        setEndMatchError("Please enter valid, non-negative penalty scores.");
+        return;
+      }
+      if (scoreA === scoreB) {
+        setEndMatchError("Penalty scores cannot be a draw.");
+        return;
+      }
+      penaltyPayload = { penaltyScoreA: scoreA, penaltyScoreB: scoreB };
+    }
+    
+    setEndMatchError('');
+    try {
+        await endMatch(tournamentId, matchId, penaltyPayload);
+        setEndModalOpen(false);
+        navigate(`/tournament/${tournamentId}`);
+    } catch(err: any) {
+        setEndMatchError(err.message || "Failed to end match.");
+    }
   };
 
   return (
@@ -236,15 +264,44 @@ const LiveScoringPage: React.FC = () => {
 
       {isEndModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+          <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
             <h3 className="text-xl font-bold mb-4">End Match</h3>
             <p className="text-gray-300 mb-4">
               Are you sure you want to end this match? Final Score: {teamA.name} {match.scoreA} - {match.scoreB}{' '}
               {teamB.name}
             </p>
-            <div className="flex justify-end gap-4">
+            {needsPenalties && (
+                <div className="my-4 border-t border-b border-gray-700 py-4">
+                    <h4 className="font-semibold text-lg text-yellow-400 mb-3">Penalty Shootout Required</h4>
+                    <p className="text-sm text-gray-400 mb-4">This is a knockout match that ended in a draw. Please enter the final penalty shootout scores to determine a winner.</p>
+                    <div className="grid grid-cols-2 gap-4 items-center">
+                        <div className="text-center">
+                            <label className="font-bold text-lg">{teamA.name}</label>
+                            <input
+                                type="number"
+                                value={penaltyScores.scoreA}
+                                onChange={(e) => setPenaltyScores(prev => ({ ...prev, scoreA: e.target.value }))}
+                                className="mt-2 w-24 text-center bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-lg text-white px-3 py-2"
+                                placeholder="Pens"
+                            />
+                        </div>
+                        <div className="text-center">
+                            <label className="font-bold text-lg">{teamB.name}</label>
+                            <input
+                                type="number"
+                                value={penaltyScores.scoreB}
+                                onChange={(e) => setPenaltyScores(prev => ({ ...prev, scoreB: e.target.value }))}
+                                className="mt-2 w-24 text-center bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-lg text-white px-3 py-2"
+                                placeholder="Pens"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+            {endMatchError && <p className="text-red-400 text-sm mt-2">{endMatchError}</p>}
+            <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setEndModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg"> Cancel </button>
-              <button onClick={handleConfirmEndMatch} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"> Confirm </button>
+              <button onClick={handleConfirmEndMatch} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"> Confirm End Match</button>
             </div>
           </div>
         </div>

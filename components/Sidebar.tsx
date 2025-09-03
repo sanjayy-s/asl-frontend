@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
-import { UsersIcon, TrophyIcon } from './common/Icons';
+import { TrophyIcon } from './common/Icons';
+import { Team, Tournament, User } from '../types';
 
 const ChevronDownIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform duration-200 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -10,26 +11,42 @@ const ChevronDownIcon: React.FC<{className?: string}> = ({ className }) => (
 );
 
 const Sidebar: React.FC = () => {
-    const { currentUser, getTeamById, getTournamentById } = useAppContext();
+    const { currentUser, teams, tournaments } = useAppContext();
     const [isMatchesOpen, setIsMatchesOpen] = useState(true);
-    const [myTeams, setMyTeams] = useState<any[]>([]);
-    const [myTournaments, setMyTournaments] = useState<any[]>([]);
 
-    // This is a placeholder for a more robust data fetching strategy.
-    // In a real app, dedicated endpoints like /api/me/teams would be better.
-    useEffect(() => {
-        const fetchMyData = async () => {
-            // This is a simplified placeholder
-        };
-        fetchMyData();
-    }, [currentUser]);
+    const myTeams = useMemo(() => {
+        if (!currentUser || !teams) return [];
+        return teams.filter(team =>
+            team.adminIds.includes(currentUser._id) ||
+            (team.members || []).some(member => (typeof member === 'string' ? member : member._id) === currentUser._id)
+        );
+    }, [currentUser, teams]);
+
+    const myTournaments = useMemo(() => {
+        if (!currentUser || !tournaments || !myTeams) return [];
+        
+        const myTeamIds = new Set(myTeams.map(t => t._id));
+
+        const relevantTournaments = tournaments.filter(tourn => {
+            const teamsInTournament = (tourn.teams || []).map(t => typeof t === 'string' ? t : t._id);
+            return (
+                // User is the admin
+                tourn.adminId === currentUser._id || 
+                // Or one of the user's teams is in the tournament
+                teamsInTournament.some(teamId => myTeamIds.has(teamId))
+            );
+        });
+
+        // Remove duplicates in case user is admin and also a participant
+        return [...new Map(relevantTournaments.map(item => [item._id, item])).values()];
+    }, [currentUser, tournaments, myTeams]);
     
     if (!currentUser) return null;
 
     const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
         `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
         isActive
-            ? 'bg-green-600 text-white'
+            ? 'bg-green-600/80 text-white'
             : 'text-gray-300 hover:bg-gray-700 hover:text-white'
         }`;
     

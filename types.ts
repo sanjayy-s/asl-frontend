@@ -71,6 +71,8 @@ export interface Match {
   time?: string;
   scoreA: number;
   scoreB: number;
+  penaltyScoreA?: number;
+  penaltyScoreB?: number;
   status: MatchStatus;
   goals: Goal[];
   cards: Card[];
