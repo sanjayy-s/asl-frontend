@@ -11,14 +11,19 @@ const ChevronDownIcon: React.FC<{className?: string}> = ({ className }) => (
     </svg>
 );
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const { currentUser, teams, tournaments } = useAppContext();
     const [isMatchesOpen, setIsMatchesOpen] = useState(true);
 
     const myTeams = useMemo(() => {
         if (!currentUser || !teams) return [];
         return teams.filter(team =>
-            team.adminIds.includes(currentUser._id) ||
+            team.adminIds.some(admin => admin._id === currentUser._id) ||
             (team.members || []).some(member => (typeof member === 'string' ? member : member._id) === currentUser._id)
         );
     }, [currentUser, teams]);
@@ -31,14 +36,11 @@ const Sidebar: React.FC = () => {
         const relevantTournaments = tournaments.filter(tourn => {
             const teamsInTournament = (tourn.teams || []).map(t => typeof t === 'string' ? t : t._id);
             return (
-                // User is the admin
                 tourn.adminId === currentUser._id || 
-                // Or one of the user's teams is in the tournament
                 teamsInTournament.some(teamId => myTeamIds.has(teamId))
             );
         });
 
-        // Remove duplicates in case user is admin and also a participant
         return [...new Map(relevantTournaments.map(item => [item._id, item])).values()];
     }, [currentUser, tournaments, myTeams]);
     
@@ -59,14 +61,14 @@ const Sidebar: React.FC = () => {
         }`;
 
     return (
-        <aside className="w-64 bg-gray-800 p-4 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
+        <aside className={`fixed inset-y-0 left-0 w-64 bg-gray-800 p-4 flex-shrink-0 border-r border-gray-700 overflow-y-auto transform transition-transform duration-300 ease-in-out z-40 md:relative md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
             <nav className="space-y-6">
                 <div>
                     <h3 className="px-3 text-xs uppercase text-gray-400 font-bold mb-2 tracking-wider">My Teams</h3>
                     <ul className="space-y-1">
                         {myTeams.map(team => (
                             <li key={team._id}>
-                                <NavLink to={`/team/${team._id}`} className={navLinkClasses}>
+                                <NavLink to={`/team/${team._id}`} className={navLinkClasses} onClick={onClose}>
                                     {team.logoUrl ? (
                                         <img src={team.logoUrl} className="h-6 w-6 rounded-full object-cover" alt={team.name} />
                                     ) : (
@@ -93,17 +95,17 @@ const Sidebar: React.FC = () => {
                     {isMatchesOpen && (
                          <ul className="space-y-1 mt-2">
                             <li>
-                                <NavLink to="/matches?view=upcoming" className={subNavLinkClasses}>
+                                <NavLink to="/matches?view=upcoming" className={subNavLinkClasses} onClick={onClose}>
                                     Upcoming
                                 </NavLink>
                             </li>
                              <li>
-                                <NavLink to="/matches?view=live" className={subNavLinkClasses}>
+                                <NavLink to="/matches?view=live" className={subNavLinkClasses} onClick={onClose}>
                                     Live
                                 </NavLink>
                             </li>
                              <li>
-                                <NavLink to="/matches?view=past" className={subNavLinkClasses}>
+                                <NavLink to="/matches?view=past" className={subNavLinkClasses} onClick={onClose}>
                                     Past
                                 </NavLink>
                             </li>
@@ -116,7 +118,7 @@ const Sidebar: React.FC = () => {
                      <ul className="space-y-1">
                         {myTournaments.map(tournament => (
                             <li key={tournament._id}>
-                                <NavLink to={`/tournament/${tournament._id}`} className={navLinkClasses}>
+                                <NavLink to={`/tournament/${tournament._id}`} className={navLinkClasses} onClick={onClose}>
                                      <TrophyIcon className="h-5 w-5" />
                                     <span className="truncate">{tournament.name}</span>
                                 </NavLink>

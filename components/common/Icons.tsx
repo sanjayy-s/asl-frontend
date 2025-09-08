@@ -69,3 +69,9 @@ export const CardYellowIcon: React.FC<{className?: string}> = ({ className }) =>
 export const CardRedIcon: React.FC<{className?: string}> = ({ className }) => (
     <div className={`w-3 h-4 rounded-sm bg-red-500 ${className}`}></div>
 );
+
+export const MenuIcon: React.FC<{className?: string}> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+);

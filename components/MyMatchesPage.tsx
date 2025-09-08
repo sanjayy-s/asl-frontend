@@ -68,20 +68,46 @@ const MyMatchesPage: React.FC = () => {
 
     const myMatches = useMemo(() => {
         if (!currentUser) return [];
-        const allMatches: Match[] = [];
-        tournaments.forEach(tourn => {
-            tourn.matches.forEach(match => {
-                const teamA = match.teamAId;
-                const teamB = match.teamBId;
-                const isUserInTeamA = teamA.members.some(m => m._id === currentUser._id);
-                const isUserInTeamB = teamB.members.some(m => m._id === currentUser._id);
+        
+        const processedMatches: Match[] = [];
 
-                if (isUserInTeamA || isUserInTeamB) {
-                    allMatches.push(match);
+        // Iterate through each tournament to maintain context for finding full team data
+        tournaments.forEach(tournament => {
+            if (!tournament.teams || tournament.teams.length === 0) return;
+
+            // Iterate through matches within that tournament
+            tournament.matches.forEach(match => {
+                const teamAId = match.teamAId?._id;
+                const teamBId = match.teamBId?._id;
+
+                // Find the complete team objects from the tournament's top-level `teams` array,
+                // which is guaranteed to be populated with members.
+                const fullTeamA = tournament.teams.find(t => t._id === teamAId);
+                const fullTeamB = tournament.teams.find(t => t._id === teamBId);
+
+                // Defensive check: if we can't find the full teams, or they have no members, skip.
+                if (!fullTeamA || !fullTeamB || !fullTeamA.members || !fullTeamB.members) {
+                    return;
+                }
+
+                // Check if the current user is a member of either team
+                const isUserInMatch = 
+                    fullTeamA.members.some(m => m?._id === currentUser._id) ||
+                    fullTeamB.members.some(m => m?._id === currentUser._id);
+
+                if (isUserInMatch) {
+                    // Create a new match object for the UI, ensuring it has the fully populated team data.
+                    // This is what will be passed to MatchCard.
+                    processedMatches.push({
+                        ...match,
+                        teamAId: fullTeamA,
+                        teamBId: fullTeamB
+                    });
                 }
             });
         });
-        return allMatches;
+        
+        return processedMatches;
     }, [currentUser, tournaments]);
     
     const upcomingMatches = myMatches.filter(m => m.status === MatchStatus.SCHEDULED).sort((a,b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));

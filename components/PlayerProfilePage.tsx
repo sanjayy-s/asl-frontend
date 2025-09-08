@@ -47,16 +47,25 @@ const PlayerProfilePage: React.FC = () => {
 
     tournaments.forEach(tournament => {
       tournament.matches.forEach(match => {
-        const teamA = match.teamAId;
-        const teamB = match.teamBId;
-        const isPlayerInMatch = teamA.members.some(m => m._id === player._id) || teamB.members.some(m => m._id === player._id);
+        if (!match.teamAId?._id || !match.teamBId?._id) return;
+
+        // FIX: Look up the full team objects from the tournament's teams list
+        // to ensure the 'members' array is fully populated.
+        const fullTeamA = tournament.teams.find(t => t._id === match.teamAId._id);
+        const fullTeamB = tournament.teams.find(t => t._id === match.teamBId._id);
+
+        if (!fullTeamA || !fullTeamB) return; // Cannot determine player involvement
+        
+        const isPlayerInMatch = 
+            (fullTeamA.members || []).some(m => m?._id === player._id) || 
+            (fullTeamB.members || []).some(m => m?._id === player._id);
         
         if (isPlayerInMatch && match.status === MatchStatus.FINISHED) {
           matchesPlayed++;
         }
         
         match.goals.forEach(goal => {
-          if (goal.scorerId._id === player._id && !goal.isOwnGoal) {
+          if (goal.scorerId?._id === player._id && !goal.isOwnGoal) {
             goals++;
           }
           if (goal.assistId?._id === player._id) {

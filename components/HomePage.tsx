@@ -81,7 +81,8 @@ const HomePage: React.FC = () => {
     const myTeams = useMemo(() => {
         if (!currentUser || !teams) return [];
         return teams.filter(team =>
-            team.adminIds.includes(currentUser._id) ||
+            // FIX: Check if any admin user object's _id matches the current user's _id.
+            team.adminIds.some(admin => admin._id === currentUser._id) ||
             (team.members || []).some(member => (typeof member === 'string' ? member : member._id) === currentUser._id)
         );
     }, [currentUser, teams]);

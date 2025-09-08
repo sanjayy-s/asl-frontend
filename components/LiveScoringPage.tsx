@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+
+import React, { useState, useMemo } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import { MatchStatus, CardType, Tournament, Match, Team, User } from '../types';
@@ -8,49 +9,44 @@ import { FootballIcon } from './common/Icons';
 const LiveScoringPage: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const [searchParams] = useSearchParams();
-  const tournamentId = searchParams.get('tournamentId');
   const navigate = useNavigate();
-
-  const { getTournamentById, recordGoal, recordCard, endMatch, currentUser } = useAppContext();
   
-  const [tournament, setTournament] = useState<Tournament | null>(null);
-  const [match, setMatch] = useState<Match | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  // Get global state and actions from context
+  const { tournaments, recordGoal, recordCard, endMatch, currentUser, isLoading: isAppLoading } = useAppContext();
 
-  useEffect(() => {
-    const fetchMatchData = async () => {
-        if (!tournamentId || !matchId) {
-            setError("Missing tournament or match ID.");
-            setIsLoading(false);
-            return;
-        }
-        try {
-            setIsLoading(true);
-            const fetchedTournament = await getTournamentById(tournamentId);
-            if (fetchedTournament) {
-                setTournament(fetchedTournament);
-                const currentMatch = fetchedTournament.matches.find(m => m._id === matchId);
-                if (currentMatch) {
-                    setMatch(currentMatch);
-                } else {
-                    setError("Match not found in this tournament.");
-                }
-            } else {
-                setError("Tournament not found.");
-            }
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    fetchMatchData();
-  }, [tournamentId, matchId, getTournamentById]);
+  // --- DERIVE STATE FROM CONTEXT ---
+  // Find the current tournament and match from the global 'tournaments' array.
+  const { tournament, match } = useMemo(() => {
+    const tournamentId = searchParams.get('tournamentId');
+    if (!tournamentId || !matchId || !tournaments) {
+        return { tournament: null, match: null };
+    }
+    const currentTournament = tournaments.find(t => t._id === tournamentId);
+    if (!currentTournament) {
+        return { tournament: null, match: null };
+    }
+    const currentMatch = currentTournament.matches.find(m => m._id === matchId);
+    return { tournament: currentTournament, match: currentMatch || null };
+  }, [tournaments, searchParams, matchId]);
 
-  const teamA = match?.teamAId as Team | undefined;
-  const teamB = match?.teamBId as Team | undefined;
+  // FIX: The teamAId/teamBId on the match object might not be fully populated with members.
+  // To ensure we have the full team data, we find the complete team object
+  // from the tournament's top-level 'teams' array, which is guaranteed to be populated.
+  const teamA = useMemo(() => {
+    if (!match || !tournament) return null;
+    const teamAId = typeof match.teamAId === 'string' ? match.teamAId : match.teamAId?._id;
+    return tournament.teams.find(t => t._id === teamAId) || null;
+  }, [match, tournament]);
 
+  const teamB = useMemo(() => {
+    if (!match || !tournament) return null;
+    const teamBId = typeof match.teamBId === 'string' ? match.teamBId : match.teamBId?._id;
+    return tournament.teams.find(t => t._id === teamBId) || null;
+  }, [match, tournament]);
+
+  const tournamentId = tournament?._id;
+
+  // Local UI state for modals
   const [isGoalModalOpen, setGoalModalOpen] = useState(false);
   const [isCardModalOpen, setCardModalOpen] = useState(false);
   const [isEndModalOpen, setEndModalOpen] = useState(false);
@@ -65,35 +61,37 @@ const LiveScoringPage: React.FC = () => {
 
   const [penaltyScores, setPenaltyScores] = useState<{ scoreA: string, scoreB: string }>({ scoreA: '', scoreB: '' });
   const [endMatchError, setEndMatchError] = useState('');
-
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const modalTeamPlayers = useMemo(() => {
     const team = modalTeamId === teamA?._id ? teamA : teamB;
-    return team?.members as User[] || [];
+    return (team?.members || []).filter(player => player && player.profile);
   }, [modalTeamId, teamA, teamB]);
   
   const opposingTeamPlayers = useMemo(() => {
     const team = modalTeamId === teamA?._id ? teamB : teamA;
-    return team?.members as User[] || [];
+    return (team?.members || []).filter(player => player && player.profile);
   }, [modalTeamId, teamA, teamB]);
 
   const scorerPlayers = isOwnGoal ? opposingTeamPlayers : modalTeamPlayers;
   const assistPlayers = modalTeamPlayers.filter(p => p._id !== scorerId);
 
-
-  if (isLoading) {
+  // --- RENDER LOGIC ---
+  if (isAppLoading) {
     return <div className="text-center p-10"><FootballIcon className="h-12 w-12 mx-auto text-green-500 animate-spin"/></div>;
   }
   
-  if (error || !tournament || !match || !teamA || !teamB) {
-    return <div className="text-center text-red-500">{error || 'Match data could not be loaded.'}</div>;
+  if (!tournament || !match || !teamA || !teamB) {
+    return <div className="text-center text-red-500">Match data could not be loaded. It might not exist.</div>;
   }
-
+  
   const isAdmin = currentUser?._id === tournament.adminId;
   if (!isAdmin) {
     return <div className="text-center text-yellow-500">Live scoring is only available for tournament admins.</div>;
   }
 
+  // --- EVENT HANDLERS ---
   const openGoalModal = (teamId: string) => {
     setModalTeamId(teamId);
     setIsOwnGoal(false);
@@ -110,22 +108,36 @@ const LiveScoringPage: React.FC = () => {
   }
 
   const handleRecordGoal = async () => {
-    if (!scorerId || !tournamentId || !matchId) return;
-    await recordGoal(tournamentId, matchId, scorerId, assistId || undefined, isOwnGoal);
-    setGoalModalOpen(false);
+    if (!scorerId || !tournamentId || !matchId || !modalTeamId || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+        await recordGoal(tournamentId, matchId, scorerId, modalTeamId, assistId || undefined, isOwnGoal);
+        setGoalModalOpen(false);
+    } catch (error) {
+        console.error("Failed to record goal:", error);
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleRecordCard = async () => {
-    if (!cardPlayerId || !tournamentId || !matchId) return;
-    await recordCard(tournamentId, matchId, cardPlayerId, cardType);
-    setCardModalOpen(false);
+    if (!cardPlayerId || !tournamentId || !matchId || !modalTeamId || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+        await recordCard(tournamentId, matchId, cardPlayerId, cardType, modalTeamId);
+        setCardModalOpen(false);
+    } catch(error) {
+        console.error("Failed to record card", error);
+    } finally {
+        setIsSubmitting(false);
+    }
   }
 
   const isKnockout = ['Final', 'Semi-Final', 'Quarter-Final', 'Eliminator'].includes(match.round);
   const needsPenalties = isKnockout && match.scoreA === match.scoreB;
 
   const handleConfirmEndMatch = async () => {
-    if (!tournamentId || !matchId) return;
+    if (!tournamentId || !matchId || isSubmitting) return;
     
     let penaltyPayload: { penaltyScoreA: number, penaltyScoreB: number } | undefined = undefined;
     if (needsPenalties) {
@@ -143,12 +155,15 @@ const LiveScoringPage: React.FC = () => {
     }
     
     setEndMatchError('');
+    setIsSubmitting(true);
     try {
         await endMatch(tournamentId, matchId, penaltyPayload);
         setEndModalOpen(false);
         navigate(`/tournament/${tournamentId}`);
     } catch(err: any) {
         setEndMatchError(err.message || "Failed to end match.");
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -227,7 +242,9 @@ const LiveScoringPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setGoalModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg"> Cancel </button>
-              <button onClick={handleRecordGoal} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!scorerId}> Confirm Goal </button>
+              <button onClick={handleRecordGoal} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!scorerId || isSubmitting}>
+                 {isSubmitting ? 'Confirming...' : 'Confirm Goal'}
+              </button>
             </div>
           </div>
         </div>
@@ -261,7 +278,9 @@ const LiveScoringPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setCardModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancel</button>
-              <button onClick={handleRecordCard} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!cardPlayerId}>Confirm Card</button>
+              <button onClick={handleRecordCard} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!cardPlayerId || isSubmitting}>
+                 {isSubmitting ? 'Confirming...' : 'Confirm Card'}
+              </button>
             </div>
           </div>
         </div>
@@ -306,7 +325,9 @@ const LiveScoringPage: React.FC = () => {
             {endMatchError && <p className="text-red-400 text-sm mt-2">{endMatchError}</p>}
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setEndModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg"> Cancel </button>
-              <button onClick={handleConfirmEndMatch} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"> Confirm End Match</button>
+              <button onClick={handleConfirmEndMatch} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                 {isSubmitting ? 'Confirming...' : 'Confirm End Match'}
+              </button>
             </div>
           </div>
         </div>

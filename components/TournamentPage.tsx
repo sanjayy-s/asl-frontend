@@ -229,7 +229,7 @@ const TournamentPage: React.FC = () => {
             {activeTab === 'leaders' && <LeadersTab matches={tournament.matches} teams={tournamentTeams} />}
 
             {editingMatch && <EditMatchModal match={editingMatch} teams={tournamentTeams} onClose={() => setEditingMatch(null)} onSave={handleUpdateMatch} />}
-            {potmModalMatch && <PlayerOfTheMatchModal match={potmModalMatch} onClose={() => setPotmModalMatch(null)} onSave={handleSetPotm} />}
+            {potmModalMatch && <PlayerOfTheMatchModal match={potmModalMatch} tournamentTeams={tournament.teams} onClose={() => setPotmModalMatch(null)} onSave={handleSetPotm} />}
             {isEditModalOpen && <EditTournamentModal tournament={tournament} onClose={() => setIsEditModalOpen(false)} onSave={updateTournament} />}
 
             {isMatchModalOpen && (
@@ -415,8 +415,15 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                     const benefitingTeam = goal.teamId === teamA._id ? teamA : teamB;
                                                     return (
                                                         <li key={`goal-${index}`} className="flex items-center gap-2">
-                                                          <span className="font-bold text-green-400">⚽</span>
-                                                          <span>Goal for <Link to={`/team/${benefitingTeam._id}`} className="font-semibold hover:underline">{benefitingTeam.name}</Link>. Scored by <Link to={`/player/${scorer._id}`} className="font-semibold hover:underline">{scorer.profile.name}</Link>{goal.isOwnGoal && <span className="text-red-400 font-semibold"> (OG)</span>}.{assister && <span className="text-gray-400"> (A: <Link to={`/player/${assister._id}`} className="hover:underline">{assister.profile.name}</Link>)</span>}</span>
+                                                            <span className="font-bold text-green-400">⚽</span>
+                                                            <span>
+                                                                Goal for <Link to={`/team/${benefitingTeam._id}`} className="font-semibold hover:underline">{benefitingTeam.name}</Link>.
+                                                                {scorer && scorer.profile ? (
+                                                                    <> Scored by <Link to={`/player/${scorer._id}`} className="font-semibold hover:underline">{scorer.profile.name}</Link></>
+                                                                ) : ( ' Scorer details unavailable.' )}
+                                                                {goal.isOwnGoal && <span className="text-red-400 font-semibold"> (OG)</span>}.
+                                                                {assister && assister.profile && <span className="text-gray-400"> (A: <Link to={`/player/${assister._id}`} className="hover:underline">{assister.profile.name}</Link>)</span>}
+                                                            </span>
                                                         </li>
                                                     );
                                                 } else {
@@ -425,7 +432,15 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                     return (
                                                         <li key={`card-${index}`} className="flex items-center gap-2">
                                                             {card.type === CardType.YELLOW ? <CardYellowIcon /> : <CardRedIcon />}
-                                                            <span><Link to={`/player/${player._id}`} className="font-semibold hover:underline">{player.profile.name}</Link> received a {card.type} Card.</span>
+                                                            <span>
+                                                                {player && player.profile ? (
+                                                                    <>
+                                                                        <Link to={`/player/${player._id}`} className="font-semibold hover:underline">{player.profile.name}</Link> received a {card.type} Card.
+                                                                    </>
+                                                                ) : (
+                                                                    `A ${card.type} Card was given to a player whose details are unavailable.`
+                                                                )}
+                                                            </span>
                                                         </li>
                                                     );
                                                 }
@@ -441,7 +456,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                     
                                     <div className="mt-4">
                                         <h4 className="font-bold mb-2 flex items-center gap-2"><TrophyIcon className="text-yellow-400 w-5 h-5" /> Player of the Match</h4>
-                                        {potm ? (
+                                        {potm && potm.profile ? (
                                             <Link to={`/player/${potm._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
                                                 {potm.profile.imageUrl ? (
                                                     <img src={potm.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
@@ -486,6 +501,7 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
         matches
             .filter(m => m.status === MatchStatus.FINISHED && !knockoutRounds.includes(m.round))
             .forEach(m => {
+                 if (!m.teamAId || !m.teamBId) return;
                 const teamAId = m.teamAId._id;
                 const teamBId = m.teamBId._id;
                 
@@ -571,27 +587,36 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
 
 const LeadersTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches, teams }) => {
     const { topScorers, topAssisters } = useMemo(() => {
-        const players = new Map<string, User>();
-        teams.forEach(team => team.members.forEach(member => players.set(member._id, member)));
-
         const goalCounts: { [key: string]: { player: User, goals: number } } = {};
         const assistCounts: { [key: string]: { player: User, assists: number } } = {};
 
         matches.forEach(m => {
             m.goals.forEach(g => {
-                if (!g.isOwnGoal) {
-                    if (!goalCounts[g.scorerId._id]) goalCounts[g.scorerId._id] = { player: g.scorerId, goals: 0 };
+                if (g.scorerId && !g.isOwnGoal) {
+                    if (!goalCounts[g.scorerId._id]) {
+                        goalCounts[g.scorerId._id] = { player: g.scorerId, goals: 0 };
+                    }
                     goalCounts[g.scorerId._id].goals++;
                 }
                 if(g.assistId) {
-                    if (!assistCounts[g.assistId._id]) assistCounts[g.assistId._id] = { player: g.assistId, assists: 0 };
+                    if (!assistCounts[g.assistId._id]) {
+                        assistCounts[g.assistId._id] = { player: g.assistId, assists: 0 };
+                    }
                     assistCounts[g.assistId._id].assists++;
                 }
             });
         });
         
-        const sortedScorers = Object.values(goalCounts).sort((a, b) => b.goals - a.goals).slice(0, 10);
-        const sortedAssisters = Object.values(assistCounts).sort((a, b) => b.assists - a.assists).slice(0, 10);
+        const sortedScorers = Object.values(goalCounts)
+            .filter(item => item.player && item.player.profile)
+            .sort((a, b) => b.goals - a.goals)
+            .slice(0, 10);
+
+        const sortedAssisters = Object.values(assistCounts)
+            .filter(item => item.player && item.player.profile)
+            .sort((a, b) => b.assists - a.assists)
+            .slice(0, 10);
+            
         return { topScorers: sortedScorers, topAssisters: sortedAssisters };
     }, [matches, teams]);
 
@@ -684,11 +709,11 @@ const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void
     );
 };
 
-const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSave: (playerId: string) => void; }> = ({ match, onClose, onSave }) => {
+const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; onClose: () => void; onSave: (playerId: string) => void; }> = ({ match, tournamentTeams, onClose, onSave }) => {
     const [selectedPlayerId, setSelectedPlayerId] = useState(match.playerOfTheMatchId?._id || '');
     
-    const teamA = match.teamAId;
-    const teamB = match.teamBId;
+    const teamA = useMemo(() => tournamentTeams.find(t => t._id === match.teamAId?._id), [tournamentTeams, match.teamAId]);
+    const teamB = useMemo(() => tournamentTeams.find(t => t._id === match.teamBId?._id), [tournamentTeams, match.teamBId]);
     const players = useMemo(() => [...(teamA?.members || []), ...(teamB?.members || [])], [teamA, teamB]);
 
     const handleSave = () => {
@@ -701,9 +726,10 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; onClose: () => void; onSav
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
             <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
                 <h3 className="text-xl font-bold mb-4">Select Player of the Match</h3>
-                <p className="text-gray-400 mb-4">For match: {teamA?.name} vs {teamB?.name}</p>
+                <p className="text-gray-400 mb-4">For match: {match.teamAId?.name} vs {match.teamBId?.name}</p>
                 <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
                     {players.map(player => {
+                        if (!player || !player.profile) return null;
                         const playerTeam = (teamA?.members || []).some(m => m._id === player._id) ? teamA : teamB;
                         return (
                             <label key={player._id} className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${selectedPlayerId === player._id ? 'bg-green-600' : 'bg-gray-700 hover:bg-gray-600'}`}>

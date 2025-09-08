@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
+import Logo from "./logo.svg";
 import { useAppContext } from './hooks/useAppContext';
 import Auth from './components/Auth';
 import HomePage from './components/HomePage';
@@ -9,7 +10,7 @@ import TeamPage from './components/TeamPage';
 import TournamentPage from './components/TournamentPage';
 import LiveScoringPage from './components/LiveScoringPage';
 import Sidebar from './components/Sidebar';
-import { FootballIcon, BellIcon } from './components/common/Icons';
+import { FootballIcon, BellIcon, MenuIcon } from './components/common/Icons';
 import ProfilePage from './components/ProfilePage';
 import PlayerProfilePage from './components/PlayerProfilePage';
 import MyMatchesPage from './components/MyMatchesPage';
@@ -43,7 +44,7 @@ const NotificationsDropdown: React.FC<{
   };
 
   return (
-    <div ref={dropdownRef} className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+    <div ref={dropdownRef} className="absolute top-full left-4 right-4 mt-2 w-auto rounded-lg shadow-lg z-50 bg-gray-800 border border-gray-700 md:w-80 md:left-auto md:right-0">
       <div className="p-3 flex justify-between items-center border-b border-gray-700">
         <h3 className="font-semibold">Notifications</h3>
         <button onClick={onMarkAllAsRead} className="text-sm text-green-400 hover:underline">Mark all as read</button>
@@ -69,7 +70,7 @@ const NotificationsDropdown: React.FC<{
 };
 
 
-const Header: React.FC = () => {
+const Header: React.FC<{ onToggleSidebar: () => void }> = ({ onToggleSidebar }) => {
   const { currentUser, logout, notifications, markNotificationAsRead, markAllNotificationsAsRead } = useAppContext();
   const navigate = useNavigate();
   const [isNotificationsOpen, setNotificationsOpen] = useState(false);
@@ -83,16 +84,27 @@ const Header: React.FC = () => {
   const unreadCount = userNotifications.filter(n => !n.isRead).length;
 
   return (
-    <header className="bg-gray-800 p-4 shadow-md flex-shrink-0">
+    <header className="bg-gray-800 p-4 shadow-md flex-shrink-0 z-20 relative">
       <div className="container mx-auto flex justify-between items-center">
-        <Link to="/" className="flex items-center gap-2 text-xl font-bold text-green-400 hover:text-green-300">
-          <FootballIcon />
-          <span>ASL</span>
-        </Link>
+        <div className="flex items-center gap-4">
+          {currentUser && (
+            <button
+              onClick={onToggleSidebar}
+              className="md:hidden text-gray-300 hover:text-white"
+              aria-label="Open navigation menu"
+            >
+              <MenuIcon />
+            </button>
+          )}
+          <Link to="/" className="flex items-center gap-2 text-xl font-bold text-green-400 hover:text-green-300">
+            <img src={Logo} alt="ASL logo" className="h-8 w-8" />
+            <span>ASL</span>
+          </Link>
+        </div>
         <nav>
           {currentUser ? (
             <div className="flex items-center gap-4">
-              <div className="relative">
+              <div className="static md:relative">
                 <button onClick={() => setNotificationsOpen(prev => !prev)} className="relative text-gray-300 hover:text-white">
                   <BellIcon />
                   {unreadCount > 0 && (
@@ -130,22 +142,38 @@ const Header: React.FC = () => {
 
 const App: React.FC = () => {
   const { currentUser, isProfileComplete, isLoading } = useAppContext();
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
   
-  if (isLoading) {
-    return (
-        <div className="h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
-            <FootballIcon className="h-16 w-16 text-green-500 animate-spin"/>
-        </div>
-    );
-  }
+if (isLoading) {
+  return (
+    <div className="h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
+      <img
+        src={Logo}
+        alt="Loading..."
+        className="h-16 w-16 animate-spin"
+      />
+    </div>
+  );
+}
 
   const showAppLayout = currentUser && isProfileComplete();
 
   return (
     <div className="h-screen bg-gray-900 text-gray-100 flex flex-col">
-      <Header />
-       <div className="flex flex-grow overflow-hidden">
-        {showAppLayout && <Sidebar />}
+      <Header onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
+       <div className="flex flex-grow overflow-hidden relative">
+        {showAppLayout && (
+          <>
+            <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+            {isSidebarOpen && (
+                <div 
+                    onClick={() => setSidebarOpen(false)} 
+                    className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+                    aria-hidden="true"
+                ></div>
+            )}
+          </>
+        )}
         <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {!currentUser ? (
             <Auth />

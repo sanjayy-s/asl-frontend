@@ -1,557 +1,509 @@
-
-import React, { createContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
-import { User, PlayerProfile, Team, Tournament, Match, CardType, Notification, MatchStatus, Goal, Card, AppContextType } from '../types';
-import { DEFAULT_USERS, DEFAULT_TEAMS, DEFAULT_TOURNAMENTS, DEFAULT_NOTIFICATIONS } from '../mockData';
+import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { User, PlayerProfile, Team, Tournament, CardType, Notification, AppContextType } from '../types';
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-    const [storedValue, setStoredValue] = useState<T>(() => {
-        try {
-            const item = window.localStorage.getItem(key);
-            return item ? JSON.parse(item) : initialValue;
-        } catch (error) {
-            console.error(error);
-            return initialValue;
-        }
-    });
-
-    const setValue: React.Dispatch<React.SetStateAction<T>> = (value) => {
-        try {
-            const valueToStore = value instanceof Function ? value(storedValue) : value;
-            setStoredValue(valueToStore);
-            window.localStorage.setItem(key, JSON.stringify(valueToStore));
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    return [storedValue, setValue];
-};
+// Define the base URL for your backend API.
+const API_URL = `http://${window.location.hostname}:5001/api`;
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
-const generateInviteCode = (length = 8) => Math.random().toString(36).substring(2, 2 + length).toUpperCase();
-
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [allUsers, setAllUsers] = useLocalStorage<User[]>('asl_users', DEFAULT_USERS);
-  const [allTeams, setAllTeams] = useLocalStorage<any[]>('asl_teams', DEFAULT_TEAMS);
-  const [allTournaments, setAllTournaments] = useLocalStorage<any[]>('asl_tournaments', DEFAULT_TOURNAMENTS);
-  const [notifications, setNotifications] = useLocalStorage<Notification[]>('asl_notifications', DEFAULT_NOTIFICATIONS);
-  const [imageData, setImageData] = useLocalStorage<{ [key: string]: string }>('asl_imagedata', {});
-  
+  // --- State Management ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('asl_token'));
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  // Notifications are now ephemeral and will reset on page load.
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- Image Data Resolver ---
-  const resolveImageUrl = useCallback((urlOrKey: string | null): string | null => {
-      if (urlOrKey && urlOrKey.startsWith('localimg_')) {
-          return imageData[urlOrKey] || null;
-      }
-      return urlOrKey;
-  }, [imageData]);
+  // --- API Fetch Helper ---
+  // This centralized function handles adding the auth token and parsing responses.
+  const apiFetch = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+    const data = await response.json();
+
+    if (!response.ok) {
+      // Use the message from the backend error response, or a default.
+      throw new Error(data.message || `API Error: ${response.statusText}`);
+    }
+    return data;
+  }, [token]);
   
-  // --- Data Population Helpers ---
-  const findAndPopulateUser = useCallback((userId: string | undefined | null): User | undefined => {
-      if (!userId) return undefined;
-      const user = allUsers.find(u => u._id === userId);
-      if (!user) return undefined;
-      return {
-          ...user,
-          profile: {
-              ...user.profile,
-              imageUrl: resolveImageUrl(user.profile.imageUrl),
-          }
+  // --- Notifications (Frontend Only) ---
+  const createNotification = useCallback((userId: string, message: string, link: string) => {
+      const newNotif: Notification = {
+          _id: generateId(), userId, message, link, isRead: false, createdAt: new Date().toISOString()
       };
-  }, [allUsers, resolveImageUrl]);
+      setNotifications(prev => [newNotif, ...prev]);
+  }, []);
 
-  const populateTeam = useCallback((team: any): Team | null => {
-    if (!team) return null;
-    return {
-        ...team,
-        logoUrl: resolveImageUrl(team.logoUrl),
-        members: (team.members || []).map((id: string) => findAndPopulateUser(id)).filter(Boolean) as User[]
-    };
-  }, [findAndPopulateUser, resolveImageUrl]);
+  // --- Data Fetching ---
+  // Fetches all necessary application data after a user is authenticated.
+  const fetchAppData = useCallback(async () => {
+    try {
+      // Fetch teams and tournaments the user is part of.
+      // NOTE: For a larger app, these would be dedicated endpoints like /api/my-teams
+      // For now, we fetch all and filter on the frontend for simplicity.
+      const allTeams = await apiFetch('/teams');
+      const allTournaments = await apiFetch('/tournaments');
+      setTeams(allTeams);
+      setTournaments(allTournaments);
+    } catch (error) {
+      console.error("Failed to fetch app data:", error);
+      // It's possible the token is valid but something else failed. Handle gracefully.
+    }
+  }, [apiFetch]);
 
-  const populateMatch = useCallback((match: any): Match | null => {
-    if (!match) return null;
 
-    const teamA = populateTeam(allTeams.find(t => t._id === match.teamAId));
-    const teamB = populateTeam(allTeams.find(t => t._id === match.teamBId));
-    
-    if (!teamA || !teamB) return null;
-
-    const populatedGoals: Goal[] = (match.goals || []).map((g: any) => {
-        const scorer = findAndPopulateUser(g.scorerId);
-        if (!scorer) return null;
-        const assister = findAndPopulateUser(g.assistId);
-        return { ...g, scorerId: scorer, assistId: assister || undefined };
-    }).filter(Boolean) as Goal[];
-
-    const populatedCards: Card[] = (match.cards || []).map((c: any) => {
-        const player = findAndPopulateUser(c.playerId);
-        if (!player) return null;
-        return { ...c, playerId: player };
-    }).filter(Boolean) as Card[];
-
-    return {
-        ...match,
-        teamAId: teamA,
-        teamBId: teamB,
-        playerOfTheMatchId: findAndPopulateUser(match.playerOfTheMatchId) || undefined,
-        goals: populatedGoals,
-        cards: populatedCards
-    };
-  }, [allTeams, populateTeam, findAndPopulateUser]);
-
-  const populateTournament = useCallback((tournament: any): Tournament | null => {
-    if (!tournament) return null;
-    return {
-        ...tournament,
-        logoUrl: resolveImageUrl(tournament.logoUrl),
-        teams: (tournament.teams || []).map((id: string) => populateTeam(allTeams.find(t => t._id === id))).filter(Boolean) as Team[],
-        matches: (tournament.matches || []).map(populateMatch).filter(Boolean) as Match[]
-    };
-  }, [allTeams, populateTeam, populateMatch, resolveImageUrl]);
-  
-  const populatedTeams = useMemo(() => allTeams.map(populateTeam).filter(Boolean) as Team[], [allTeams, populateTeam]);
-  const populatedTournaments = useMemo(() => allTournaments.map(populateTournament).filter(Boolean) as Tournament[], [allTournaments, populateTournament]);
-
+  // --- App Initialization (Bootstrap) ---
   useEffect(() => {
-    const bootstrap = () => {
-        if (token) {
-            try {
-                const user = allUsers.find(u => u._id === token);
-                if (user) {
-                    setCurrentUser(findAndPopulateUser(user._id) || null);
-                } else {
-                     handleLogout();
-                }
-            } catch (error) {
-                console.error("Session invalid or expired", error);
-                handleLogout();
-            }
+    const bootstrap = async () => {
+      if (token) {
+        try {
+          // Verify token by fetching the user's profile
+          const userProfile = await apiFetch('/users/profile');
+          setCurrentUser(userProfile);
+          await fetchAppData();
+        } catch (error) {
+          console.error("Session invalid or expired", error);
+          // If the token is invalid, log the user out.
+          handleLogout();
         }
-        setIsLoading(false);
+      }
+      setIsLoading(false);
     };
     bootstrap();
-  }, [token, allUsers, findAndPopulateUser]);
-  
+  }, [token, apiFetch, fetchAppData]);
+
+  // --- Auth Functions ---
   const handleLogout = () => {
     setCurrentUser(null);
     setToken(null);
+    setTeams([]);
+    setTournaments([]);
     localStorage.removeItem('asl_token');
-  };
-  
-  const createNotification = (userId: string, message: string, link: string) => {
-      const newNotif: Notification = {
-          _id: generateId(),
-          userId,
-          message,
-          link,
-          isRead: false,
-          createdAt: new Date().toISOString()
-      };
-      setNotifications(prev => [newNotif, ...prev]);
   };
 
   const login = async (email: string, dob: string) => {
-    const user = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase() && u.dob === dob);
-    if (user) {
-        const userToken = user._id; // Use user ID as token
-        localStorage.setItem('asl_token', userToken);
-        setToken(userToken);
-        setCurrentUser(findAndPopulateUser(user._id) || null);
-    } else {
-        throw new Error("Invalid credentials. Please check your email and date of birth.");
-    }
-  };
-  
-  const register = async (name: string, email: string, dob: string) => {
-    if (allUsers.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-        throw new Error("User with this email already exists");
-    }
-    const newUser: User = {
-        _id: generateId(),
-        email,
-        dob,
-        profile: { name, age: null, position: null, imageUrl: null }
-    };
-    
-    // Add the new user to the state. This will also update localStorage.
-    setAllUsers(prev => [...prev, newUser]);
-    
-    // Directly perform the login actions with the newly created user object,
-    // avoiding the stale state issue of calling the main login() function.
-    const userToken = newUser._id;
+    const { token: userToken, user } = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, dob }),
+    });
     localStorage.setItem('asl_token', userToken);
     setToken(userToken);
-    setCurrentUser(newUser); // The new user object is complete and doesn't need "population".
+    setCurrentUser(user); // The user object is returned from the login endpoint
+  };
+
+  const register = async (name: string, email: string, dob: string) => {
+    const { token: userToken, user } = await apiFetch('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, dob }),
+    });
+    localStorage.setItem('asl_token', userToken);
+    setToken(userToken);
+    setCurrentUser(user);
   };
   
-  const logout = () => { handleLogout(); };
-
+  // --- Profile and User Functions ---
   const isProfileComplete = (): boolean => {
     if (!currentUser) return false;
     return !!(currentUser.profile.age && currentUser.profile.position && currentUser.profile.imageUrl);
   };
-  
+
   const updateProfile = async (profile: Partial<PlayerProfile>) => {
-    if (!currentUser) throw new Error("Not logged in");
-    
-    const profileUpdate = { ...profile };
-
-    if (profileUpdate.imageUrl && profileUpdate.imageUrl.startsWith('data:image')) {
-        const oldImageKey = currentUser.profile.imageUrl;
-        const imageKey = `localimg_${generateId()}`;
-
-        setImageData(prev => {
-            const newData = {...prev};
-            // Remove old image if it was a local one
-            if (oldImageKey && oldImageKey.startsWith('localimg_')) {
-                delete newData[oldImageKey];
-            }
-            newData[imageKey] = profileUpdate.imageUrl as string;
-            return newData;
-        });
-        profileUpdate.imageUrl = imageKey;
-    }
-
-    let finalUpdatedUser: User | undefined;
-    setAllUsers(prev => prev.map(u => {
-        if (u._id === currentUser._id) {
-            finalUpdatedUser = { ...u, profile: { ...u.profile, ...profileUpdate } };
-            return finalUpdatedUser;
-        }
-        return u;
-    }));
-    
-    if (finalUpdatedUser) {
-        setCurrentUser(findAndPopulateUser(finalUpdatedUser._id) || null);
-    }
+    const updatedUser = await apiFetch('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+    setCurrentUser(prev => prev ? { ...prev, profile: updatedUser.profile } : null);
   };
+  
+  const getUserById = async (id: string): Promise<User | undefined> => apiFetch(`/users/${id}`);
 
+  // --- Team Functions ---
   const createTeam = async (name: string, logo: string | null): Promise<Team> => {
-    if (!currentUser) throw new Error("Not logged in");
-
-    let logoRef = logo;
-    if (logo && logo.startsWith('data:image')) {
-        const imageKey = `localimg_${generateId()}`;
-        setImageData(prev => ({...prev, [imageKey]: logo }));
-        logoRef = imageKey;
-    }
-
-    const newTeamRaw = {
-        _id: generateId(),
-        name,
-        logoUrl: logoRef,
-        adminIds: [currentUser._id],
-        members: [currentUser._id],
-        inviteCode: generateInviteCode()
-    };
-    setAllTeams(prev => [...prev, newTeamRaw]);
-    return populateTeam(newTeamRaw) as Team;
+    const newTeam = await apiFetch('/teams', {
+      method: 'POST',
+      body: JSON.stringify({ name, logoUrl: logo }),
+    });
+    setTeams(prev => [...prev, newTeam]);
+    return newTeam;
   };
-
+  
   const updateTeam = async (teamId: string, details: { name?: string, logoUrl?: string | null }) => {
-    const detailsUpdate = { ...details };
+    const updatedTeam = await apiFetch(`/teams/${teamId}`, {
+        method: 'PUT',
+        body: JSON.stringify(details),
+    });
+    setTeams(prev => prev.map(t => t._id === teamId ? updatedTeam : t));
+  };
 
-    if (detailsUpdate.logoUrl && detailsUpdate.logoUrl.startsWith('data:image')) {
-        const team = allTeams.find(t => t._id === teamId);
-        const oldImageKey = team?.logoUrl;
-        const imageKey = `localimg_${generateId()}`;
-
-        setImageData(prev => {
-            const newData = {...prev};
-            // Remove old image if it was a local one
-            if (oldImageKey && oldImageKey.startsWith('localimg_')) {
-                delete newData[oldImageKey];
-            }
-            newData[imageKey] = detailsUpdate.logoUrl as string;
-            return newData;
-        });
-        detailsUpdate.logoUrl = imageKey;
-    }
-
-    setAllTeams(prev => prev.map(t => {
-        if (t._id === teamId) {
-            return { ...t, ...detailsUpdate };
+  const joinTeam = async (code: string): Promise<Team> => {
+    const joinedTeam = await apiFetch('/teams/join', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+    });
+    // Add to teams list if not already present
+    setTeams(prev => {
+        if (prev.some(t => t._id === joinedTeam._id)) {
+            return prev.map(t => t._id === joinedTeam._id ? joinedTeam : t);
         }
-        return t;
-    }));
+        return [...prev, joinedTeam];
+    });
+     if (currentUser) {
+        createNotification(
+            currentUser._id,
+            `You have successfully joined the team: ${joinedTeam.name}.`,
+            `/team/${joinedTeam._id}`
+        );
+    }
+    return joinedTeam;
   };
   
-  const joinTeam = async (code: string): Promise<Team> => {
-      if (!currentUser) throw new Error("Not logged in");
-      const team = allTeams.find(t => t.inviteCode.toUpperCase() === code.toUpperCase());
-      if (!team) throw new Error("Team not found with this invite code");
-      if (team.members.includes(currentUser._id)) throw new Error("You are already in this team");
-      
-      const updatedTeam = { ...team, members: [...team.members, currentUser._id]};
-      setAllTeams(prev => prev.map(t => t._id === team._id ? updatedTeam : t));
-      
-      team.adminIds.forEach((adminId: string) => {
-          createNotification(adminId, `${currentUser.profile.name} joined your team: ${team.name}`, `/team/${team._id}`);
-      });
-      
-      return populateTeam(updatedTeam) as Team;
-  }
-
-  const getUserById = async (id: string): Promise<User | undefined> => findAndPopulateUser(id);
-
-  const getTeamById = async (id: string): Promise<Team | undefined> => {
-    const team = allTeams.find(t => t._id === id);
-    return populateTeam(team) || undefined;
-  }
-
-  const getTournamentById = async (id: string): Promise<Tournament | undefined> => {
-    const tournament = allTournaments.find(t => t._id === id);
-    return populateTournament(tournament) || undefined;
-  }
+  const getTeamById = async (id: string): Promise<Team | undefined> => apiFetch(`/teams/${id}`);
   
+  // --- Tournament Functions ---
   const createTournament = async (name: string, logo: string | null): Promise<Tournament> => {
-      if (!currentUser) throw new Error("Not logged in");
-      
-      let logoRef = logo;
-      if (logo && logo.startsWith('data:image')) {
-          const imageKey = `localimg_${generateId()}`;
-          setImageData(prev => ({...prev, [imageKey]: logo }));
-          logoRef = imageKey;
-      }
-      
-      const newTournamentRaw = {
-          _id: generateId(),
-          name,
-          logoUrl: logoRef,
-          adminId: currentUser._id,
-          teams: [],
-          matches: [],
-          isSchedulingDone: false,
-          inviteCode: generateInviteCode(10)
-      };
-      setAllTournaments(prev => [...prev, newTournamentRaw]);
-      return populateTournament(newTournamentRaw) as Tournament;
+    const newTournament = await apiFetch('/tournaments', {
+        method: 'POST',
+        body: JSON.stringify({ name, logoUrl: logo }),
+    });
+    setTournaments(prev => [...prev, newTournament]);
+    return newTournament;
   };
 
   const updateTournament = async (tournamentId: string, details: { name?: string, logoUrl?: string | null }) => {
-     const detailsUpdate = { ...details };
+    const updatedTournament = await apiFetch(`/tournaments/${tournamentId}`, {
+        method: 'PUT',
+        body: JSON.stringify(details),
+    });
+    setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+  };
+  
+  const getTournamentById = async (id: string): Promise<Tournament | undefined> => apiFetch(`/tournaments/${id}`);
+  
+  const joinTournament = async (inviteCode: string, teamId: string) => {
+      const result = await apiFetch('/tournaments/join', {
+          method: 'POST',
+          body: JSON.stringify({ inviteCode, teamId }),
+      });
+      if(result.success && result.tournamentId) {
+          const joinedTournament = await getTournamentById(result.tournamentId);
+          const teamForNotif = await getTeamById(teamId);
 
-    if (detailsUpdate.logoUrl && detailsUpdate.logoUrl.startsWith('data:image')) {
-        const tournament = allTournaments.find(t => t._id === tournamentId);
-        const oldImageKey = tournament?.logoUrl;
-        const imageKey = `localimg_${generateId()}`;
+          if (joinedTournament) {
+              setTournaments(prev => {
+                  if (prev.some(t => t._id === joinedTournament._id)) {
+                      return prev.map(t => t._id === joinedTournament._id ? joinedTournament : t);
+                  }
+                  return [...prev, joinedTournament];
+              });
 
-        setImageData(prev => {
-            const newData = {...prev};
-            // Remove old image if it was a local one
-            if (oldImageKey && oldImageKey.startsWith('localimg_')) {
-                delete newData[oldImageKey];
-            }
-            newData[imageKey] = detailsUpdate.logoUrl as string;
-            return newData;
-        });
-        detailsUpdate.logoUrl = imageKey;
-    }
-    
-    setAllTournaments(prev => prev.map(t => {
-        if (t._id === tournamentId) {
-            return { ...t, ...detailsUpdate };
-        }
-        return t;
-    }));
+              if (teamForNotif) {
+                   teamForNotif.members.forEach(member => {
+                      if(member) {
+                         createNotification(
+                              member._id,
+                              `Your team, ${teamForNotif.name}, has joined the tournament: ${joinedTournament.name}.`,
+                              `/tournament/${joinedTournament._id}`
+                          );
+                      }
+                  });
+              }
+          } else {
+               await fetchAppData(); // Fallback if getting by ID fails
+          }
+      }
+      return result;
   };
 
-  const joinTournament = async (inviteCode: string, teamId: string): Promise<{ success: boolean; message: string; tournamentId?: string }> => {
-      const tournament = allTournaments.find(t => t.inviteCode.toUpperCase() === inviteCode.toUpperCase());
-      if (!tournament) return { success: false, message: 'Tournament not found with this invite code.' };
+  // --- Admin & Management Functions ---
+  const addMemberToTeam = async (teamId: string, memberId: string) => {
+      const result = await apiFetch(`/teams/${teamId}/members`, {
+          method: 'POST',
+          body: JSON.stringify({ memberId })
+      });
+      if (result.success && result.team) {
+          setTeams(prev => prev.map(t => t._id === teamId ? result.team : t));
+          createNotification(
+              memberId,
+              `You have been added to the team: ${result.team.name}.`,
+              `/team/${teamId}`
+          );
+      }
+      return result;
+  };
+  
+  const removeMemberFromTeam = async (teamId: string, memberId: string) => {
+      const result = await apiFetch(`/teams/${teamId}/members/${memberId}`, { method: 'DELETE' });
+      if (result.success && result.team) {
+          setTeams(prev => prev.map(t => t._id === teamId ? result.team : t));
+      }
+      return result;
+  };
+  
+  const toggleTeamAdmin = async (teamId: string, memberId: string) => {
+      const result = await apiFetch(`/teams/${teamId}/admins/${memberId}`, { method: 'PUT' });
+      if (result.success && result.team) {
+          setTeams(prev => prev.map(t => t._id === teamId ? result.team : t));
+          const isNowAdmin = result.team.adminIds.some((admin: User) => admin._id === memberId);
+          if (isNowAdmin) {
+               createNotification(
+                  memberId,
+                  `You have been made an admin of the team: ${result.team.name}.`,
+                  `/team/${teamId}`
+              );
+          } else {
+               createNotification(
+                  memberId,
+                  `Your admin rights have been revoked for the team: ${result.team.name}.`,
+                  `/team/${teamId}`
+              );
+          }
+      }
+      return result;
+  };
+  
+  const setTeamRole = async (teamId: string, memberId: string, role: 'captain' | 'viceCaptain') => {
+      const result = await apiFetch(`/teams/${teamId}/roles`, {
+          method: 'PUT',
+          body: JSON.stringify({ memberId, role }),
+      });
+      if (result.success && result.team) {
+          setTeams(prev => prev.map(t => t._id === teamId ? result.team : t));
+          const roleName = role === 'captain' ? 'Captain' : 'Vice-Captain';
+          const roleIsSet = (role === 'captain' && result.team.captainId?._id === memberId) || (role === 'viceCaptain' && result.team.viceCaptainId?._id === memberId);
 
-      if (tournament.teams.includes(teamId)) return { success: false, message: 'This team is already in the tournament.' };
-      
-      const updatedTournament = { ...tournament, teams: [...tournament.teams, teamId] };
-      setAllTournaments(prev => prev.map(t => t._id === tournament._id ? updatedTournament : t));
+          if (roleIsSet) {
+               createNotification(
+                  memberId,
+                  `You have been appointed as ${roleName} of ${result.team.name}.`,
+                  `/team/${teamId}`
+              );
+          } else {
+               createNotification(
+                  memberId,
+                  `You are no longer the ${roleName} of ${result.team.name}.`,
+                  `/team/${teamId}`
+              );
+          }
+      }
+      return result;
+  };
 
-      createNotification(tournament.adminId, `Team ${(allTeams.find(t => t._id === teamId))?.name} joined your tournament: ${tournament.name}`, `/tournament/${tournament._id}`);
+  const addTeamToTournament = async (tournamentId: string, teamCodeOrId: string) => {
+      const oldTournament = tournaments.find(t => t._id === tournamentId);
+      const oldTeamIds = new Set(oldTournament?.teams.map(t => t._id));
 
-      return { success: true, message: 'Successfully joined tournament!', tournamentId: tournament._id };
+      const result = await apiFetch(`/tournaments/${tournamentId}/teams`, {
+          method: 'POST',
+          body: JSON.stringify({ teamCodeOrId }),
+      });
+
+      if(result.success) {
+          const updatedTournament = await getTournamentById(tournamentId);
+          if (updatedTournament) {
+              setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+              const newTeam = updatedTournament.teams.find(t => !oldTeamIds.has(t._id));
+
+              if (newTeam) {
+                   newTeam.members.forEach(member => {
+                      if (member) {
+                          createNotification(
+                              member._id,
+                              `Your team, ${newTeam.name}, has been added to the tournament: ${updatedTournament.name}.`,
+                              `/tournament/${updatedTournament._id}`
+                          );
+                      }
+                  });
+              }
+          }
+      }
+      return result;
   };
   
   const scheduleMatches = async (tournamentId: string) => {
-      const tournament = allTournaments.find(t => t._id === tournamentId);
-      if(!tournament) return;
-      
-      const newMatches: any[] = [];
-      let matchNumber = 1;
-      for (let i = 0; i < tournament.teams.length; i++) {
-        for (let j = i + 1; j < tournament.teams.length; j++) {
-            newMatches.push({
-                _id: generateId(),
-                matchNumber: matchNumber++,
-                teamAId: tournament.teams[i],
-                teamBId: tournament.teams[j],
-                round: 'League Stage',
-                status: MatchStatus.SCHEDULED,
-                scoreA: 0,
-                scoreB: 0,
-                goals: [],
-                cards: []
-            });
-        }
+      await apiFetch(`/tournaments/${tournamentId}/schedule`, { method: 'POST' });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+          updatedTournament.teams.forEach(team => {
+              team.members.forEach(member => {
+                  if (member) {
+                      createNotification(
+                          member._id,
+                          `Fixtures have been released for the tournament: ${updatedTournament.name}. Check your upcoming matches!`,
+                          `/tournament/${updatedTournament._id}`
+                      );
+                  }
+              });
+          });
       }
-      const updatedTournament = { ...tournament, matches: newMatches, isSchedulingDone: true };
-      setAllTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
   };
   
-  const addMemberToTeam = async (teamId: string, memberId: string): Promise<{ success: boolean; message: string }> => {
-      const team = allTeams.find(t => t._id === teamId);
-      const user = allUsers.find(u => u._id === memberId);
-      if (!team) return { success: false, message: "Team not found" };
-      if (!user) return { success: false, message: "User not found with that ID" };
-      if (team.members.includes(memberId)) return { success: false, message: "User is already in team" };
-      
-      const updatedTeam = {...team, members: [...team.members, memberId]};
-      setAllTeams(prev => prev.map(t => t._id === teamId ? updatedTeam : t));
-      return { success: true, message: "Member added successfully" };
-  };
-  const removeMemberFromTeam = async (teamId: string, memberId: string): Promise<{ success: boolean; message: string }> => {
-      let team = allTeams.find(t => t._id === teamId);
-      if (!team) return { success: false, message: "Team not found" };
-      
-      team = {
-          ...team,
-          members: team.members.filter((id: string) => id !== memberId),
-          adminIds: team.adminIds.filter((id: string) => id !== memberId),
-          captainId: team.captainId === memberId ? undefined : team.captainId,
-          viceCaptainId: team.viceCaptainId === memberId ? undefined : team.viceCaptainId,
-      };
-      setAllTeams(prev => prev.map(t => t._id === teamId ? team : t));
-      return { success: true, message: "Member removed" };
-  };
-  const toggleTeamAdmin = async (teamId: string, memberId: string): Promise<{ success: boolean; message: string }> => {
-      const team = allTeams.find(t => t._id === teamId);
-      if (!team) return { success: false, message: "Team not found" };
-
-      const isAdmin = team.adminIds.includes(memberId);
-      const updatedTeam = {
-          ...team,
-          adminIds: isAdmin ? team.adminIds.filter((id: string) => id !== memberId) : [...team.adminIds, memberId]
-      };
-      setAllTeams(prev => prev.map(t => t._id === teamId ? updatedTeam : t));
-      return { success: true, message: "Admin status updated" };
-  };
-  const setTeamRole = async (teamId: string, memberId: string, role: 'captain' | 'viceCaptain') => {
-      const team = allTeams.find(t => t._id === teamId);
-      if (!team) return;
-      const updatedTeam = { ...team, [`${role}Id`]: memberId };
-      setAllTeams(prev => prev.map(t => t._id === teamId ? updatedTeam : t));
-  };
-  const addTeamToTournament = async (tournamentId: string, teamCodeOrId: string): Promise<{ success: boolean; message: string }> => {
-      const tournament = allTournaments.find(t => t._id === tournamentId);
-      const team = allTeams.find(t => t._id === teamCodeOrId || t.inviteCode === teamCodeOrId);
-      if(!tournament || !team) return { success: false, message: "Tournament or Team not found" };
-      
-      if(tournament.teams.includes(team._id)) return { success: false, message: "Team already in tournament"};
-
-      const updatedTournament = {...tournament, teams: [...tournament.teams, team._id]};
-      setAllTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
-      return { success: true, message: "Team added"};
-  };
-  const updateMatchDetails = async (tournamentId: string, matchId: string, details: Partial<Pick<Match, 'teamAId' | 'teamBId' | 'date' | 'time'>>) => {
-      const tournament = allTournaments.find(t => t._id === tournamentId);
-      if (!tournament) return;
-      const updatedMatches = tournament.matches.map((m: any) => {
-          if (m._id === matchId) {
-              return {
-                  ...m,
-                  teamAId: details.teamAId?._id || m.teamAId,
-                  teamBId: details.teamBId?._id || m.teamBId,
-                  date: details.date ?? m.date,
-                  time: details.time ?? m.time,
-              };
-          }
-          return m;
-      });
-      setAllTournaments(prev => prev.map(t => t._id === tournamentId ? {...tournament, matches: updatedMatches} : t));
-  };
   const addMatchManually = async (tournamentId: string, matchData: { teamAId: string, teamBId: string, round: string }) => {
-      const tournament = allTournaments.find(t => t._id === tournamentId);
-      if (!tournament) return;
-      const newMatch = {
-          _id: generateId(),
-          matchNumber: (tournament.matches.length || 0) + 1,
-          ...matchData,
-          status: MatchStatus.SCHEDULED, scoreA: 0, scoreB: 0, goals: [], cards: []
+      await apiFetch(`/tournaments/${tournamentId}/matches`, {
+          method: 'POST',
+          body: JSON.stringify(matchData),
+      });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+      }
+  };
+  
+  const updateMatchDetails = async (tournamentId: string, matchId: string, details: any) => {
+      const finalDetails = {
+          ...details,
+          teamAId: details.teamAId?._id, // Send only the ID
+          teamBId: details.teamBId?._id
       };
-      setAllTournaments(prev => prev.map(t => t._id === tournamentId ? {...tournament, matches: [...tournament.matches, newMatch]} : t));
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}`, {
+          method: 'PUT',
+          body: JSON.stringify(finalDetails),
+      });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+          
+          const updatedMatch = updatedTournament.matches.find(m => m._id === matchId);
+          if (updatedMatch) {
+              const teamA = updatedTournament.teams.find(t => t._id === updatedMatch.teamAId._id);
+              const teamB = updatedTournament.teams.find(t => t._id === updatedMatch.teamBId._id);
+
+              if (teamA && teamB) {
+                   const message = `Match details updated for ${teamA.name} vs ${teamB.name} on ${updatedMatch.date || 'TBD'} at ${updatedMatch.time || 'TBD'}.`;
+                  teamA.members.forEach(member => {
+                      if (member) createNotification(member._id, message, `/tournament/${tournamentId}`);
+                  });
+                  teamB.members.forEach(member => {
+                      if (member) createNotification(member._id, message, `/tournament/${tournamentId}`);
+                  });
+              }
+          }
+      }
   };
-  const updateMatchInTournament = (tournamentId: string, matchId: string, updatedMatch: any) => {
-    setAllTournaments(prev => prev.map(t => {
-        if (t._id === tournamentId) {
-            return { ...t, matches: t.matches.map((m: any) => m._id === matchId ? updatedMatch : m) };
-        }
-        return t;
-    }));
-  };
+  
   const startMatch = async (tournamentId: string, matchId: string) => {
-    const tourney = allTournaments.find(t => t._id === tournamentId);
-    const match = tourney?.matches.find((m:any) => m._id === matchId);
-    if(match) updateMatchInTournament(tournamentId, matchId, { ...match, status: MatchStatus.LIVE });
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}/start`, { method: 'PUT' });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+      }
   };
+
   const endMatch = async (tournamentId: string, matchId: string, penaltyScores?: { penaltyScoreA: number, penaltyScoreB: number }) => {
-    const tourney = allTournaments.find(t => t._id === tournamentId);
-    const match = tourney?.matches.find((m:any) => m._id === matchId);
-    if (!match) return;
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}/end`, {
+          method: 'PUT',
+          body: JSON.stringify({ penaltyScores }),
+      });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+           setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+           const finishedMatch = updatedTournament.matches.find(m => m._id === matchId);
+           if (finishedMatch) {
+              const teamA = updatedTournament.teams.find(t => t._id === finishedMatch.teamAId._id);
+              const teamB = updatedTournament.teams.find(t => t._id === finishedMatch.teamBId._id);
 
-    let winnerId: string | null = null;
-    if (match.scoreA > match.scoreB) winnerId = match.teamAId;
-    else if (match.scoreB > match.scoreA) winnerId = match.teamBId;
-    else if (penaltyScores && penaltyScores.penaltyScoreA !== penaltyScores.penaltyScoreB) {
-        winnerId = penaltyScores.penaltyScoreA > penaltyScores.penaltyScoreB ? match.teamAId : match.teamBId;
-    }
-    
-    updateMatchInTournament(tournamentId, matchId, { ...match, status: MatchStatus.FINISHED, winnerId, ...penaltyScores });
-  };
-  const recordGoal = async (tournamentId: string, matchId: string, scorerId: string, assistId?: string, isOwnGoal?: boolean) => {
-    const tourney = allTournaments.find(t => t._id === tournamentId);
-    let match = tourney?.matches.find((m:any) => m._id === matchId);
-    if (!match) return;
+              if (teamA && teamB) {
+                  let resultMessage;
+                  if(finishedMatch.winnerId === teamA._id) {
+                      resultMessage = `${teamA.name} won against ${teamB.name} (${finishedMatch.scoreA}-${finishedMatch.scoreB}).`;
+                  } else if (finishedMatch.winnerId === teamB._id) {
+                      resultMessage = `${teamB.name} won against ${teamA.name} (${finishedMatch.scoreB}-${finishedMatch.scoreA}).`;
+                  } else {
+                      resultMessage = `The match between ${teamA.name} and ${teamB.name} ended in a draw (${finishedMatch.scoreA}-${finishedMatch.scoreB}).`;
+                  }
+                  const message = `Match Finished: ${resultMessage}`;
 
-    const scorerTeamId = allTeams.find(t => t.members.includes(scorerId))?._id;
-    const benefitingTeamId = isOwnGoal ? (scorerTeamId === match.teamAId ? match.teamBId : match.teamAId) : scorerTeamId;
-    
-    const newGoal = { _id: generateId(), scorerId, assistId, isOwnGoal, teamId: benefitingTeamId, minute: 0 };
-    match = {
-        ...match,
-        scoreA: benefitingTeamId === match.teamAId ? match.scoreA + 1 : match.scoreA,
-        scoreB: benefitingTeamId === match.teamBId ? match.scoreB + 1 : match.scoreB,
-        goals: [...match.goals, newGoal]
-    };
-    updateMatchInTournament(tournamentId, matchId, match);
+                  teamA.members.forEach(member => {
+                      if (member) createNotification(member._id, message, `/tournament/${tournamentId}`);
+                  });
+                  teamB.members.forEach(member => {
+                      if (member) createNotification(member._id, message, `/tournament/${tournamentId}`);
+                  });
+              }
+           }
+      }
   };
-  const recordCard = async (tournamentId: string, matchId: string, playerId: string, cardType: CardType) => {
-    const tourney = allTournaments.find(t => t._id === tournamentId);
-    let match = tourney?.matches.find((m:any) => m._id === matchId);
-    if (!match) return;
-    const playerTeamId = allTeams.find(t => t.members.includes(playerId))?._id;
-    const newCard = { _id: generateId(), playerId, cardType, teamId: playerTeamId, minute: 0 };
-    updateMatchInTournament(tournamentId, matchId, { ...match, cards: [...match.cards, newCard] });
+
+  const recordGoal = async (tournamentId: string, matchId: string, scorerId: string, benefitingTeamId: string, assistId?: string, isOwnGoal?: boolean) => {
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}/goals`, {
+          method: 'POST',
+          body: JSON.stringify({ scorerId, assistId, isOwnGoal, benefitingTeamId }),
+      });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+      }
   };
+
+  const recordCard = async (tournamentId: string, matchId: string, playerId: string, cardType: CardType, teamId: string) => {
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}/cards`, {
+          method: 'POST',
+          body: JSON.stringify({ playerId, cardType, teamId }),
+      });
+       const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+      }
+  };
+  
   const setPlayerOfTheMatch = async (tournamentId: string, matchId: string, playerId: string) => {
-    const tourney = allTournaments.find(t => t._id === tournamentId);
-    const match = tourney?.matches.find((m:any) => m._id === matchId);
-    if (match) updateMatchInTournament(tournamentId, matchId, { ...match, playerOfTheMatchId: playerId });
+      await apiFetch(`/tournaments/${tournamentId}/matches/${matchId}/potm`, {
+          method: 'PUT',
+          body: JSON.stringify({ playerId }),
+      });
+      const updatedTournament = await getTournamentById(tournamentId);
+      if (updatedTournament) {
+          setTournaments(prev => prev.map(t => t._id === tournamentId ? updatedTournament : t));
+          const match = updatedTournament.matches.find(m => m._id === matchId);
+          if (match && match.playerOfTheMatchId?._id === playerId) {
+              const teamA = updatedTournament.teams.find(t => t._id === match.teamAId._id);
+              const teamB = updatedTournament.teams.find(t => t._id === match.teamBId._id);
+              if (teamA && teamB) {
+                  createNotification(
+                      playerId,
+                      `Congratulations! You've been named Player of the Match for ${teamA.name} vs ${teamB.name}.`,
+                      `/tournament/${tournamentId}`
+                  );
+              }
+          }
+      }
   };
+  
   const markNotificationAsRead = (notificationId: string) => {
       setNotifications(prev => prev.map(n => n._id === notificationId ? {...n, isRead: true} : n));
   };
+  
   const markAllNotificationsAsRead = () => {
       if(!currentUser) return;
       setNotifications(prev => prev.map(n => n.userId === currentUser._id ? {...n, isRead: true} : n));
   };
 
+
   return (
-    <AppContext.Provider value={{ currentUser, teams: populatedTeams, tournaments: populatedTournaments, notifications, isLoading, login, register, logout, isProfileComplete, updateProfile, createTeam, updateTeam, joinTeam, addMemberToTeam, removeMemberFromTeam, toggleTeamAdmin, setTeamRole, getTeamById, getUserById, createTournament, updateTournament, getTournamentById, joinTournament, addTeamToTournament, scheduleMatches, updateMatchDetails, addMatchManually, startMatch, endMatch, recordGoal, recordCard, setPlayerOfTheMatch, markNotificationAsRead, markAllNotificationsAsRead }}>
+    <AppContext.Provider value={{ 
+        currentUser, teams, tournaments, notifications, isLoading, 
+        login, register, logout: handleLogout, isProfileComplete, updateProfile, 
+        createTeam, updateTeam, joinTeam, getTeamById, 
+        addMemberToTeam, removeMemberFromTeam, toggleTeamAdmin, setTeamRole, 
+        getUserById, createTournament, updateTournament, getTournamentById, joinTournament, 
+        addTeamToTournament, scheduleMatches, updateMatchDetails, addMatchManually, startMatch, 
+        endMatch, recordGoal, recordCard, setPlayerOfTheMatch, 
+        createNotification, markNotificationAsRead, markAllNotificationsAsRead 
+    }}>
       {children}
     </AppContext.Provider>
   );

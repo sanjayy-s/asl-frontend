@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import { Match, MatchStatus, Team, User, Tournament } from '../types';
@@ -100,51 +99,28 @@ const calculatePointsTable = (matches: Match[], teams: Team[]) => {
 const TeamPage: React.FC = () => {
     const { teamId } = useParams<{ teamId: string }>();
     const { 
-        getTeamById,
         currentUser, 
-        addMemberToTeam, 
-        tournaments: allTournaments,
         teams,
+        tournaments: allTournaments,
+        addMemberToTeam, 
         removeMemberFromTeam,
         toggleTeamAdmin,
         setTeamRole,
-        updateTeam
+        updateTeam,
+        isLoading: isAppLoading
     } = useAppContext();
     
-    const [team, setTeam] = useState<Team | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState('');
+    // Derive the current team directly from the global context.
+    // This makes the component reactive to any changes in the global state,
+    // ensuring the UI is always in sync without race conditions from local state.
+    const team = useMemo(() => teams.find(t => t._id === teamId), [teams, teamId]);
     
+    // Local state is now only used for UI concerns like inputs and modals.
     const [memberIdToAdd, setMemberIdToAdd] = useState('');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
-    useEffect(() => {
-        const fetchTeamData = async () => {
-            if (!teamId) {
-                setError("No team ID provided.");
-                setIsLoading(false);
-                return;
-            }
-            try {
-                setIsLoading(true);
-                const fetchedTeam = await getTeamById(teamId);
-                if (fetchedTeam) {
-                    setTeam(fetchedTeam);
-                } else {
-                    setError("Team not found.");
-                }
-            } catch (err: any) {
-                setError(err.message);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchTeamData();
-    }, [teamId, getTeamById, allTournaments, teams]);
-
-    const isAdmin = team?.adminIds.includes(currentUser?._id || '');
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
     const teamTournaments = useMemo(() => {
         if (!team) return [];
@@ -164,13 +140,15 @@ const TeamPage: React.FC = () => {
         const goalCounts: { [key: string]: number } = {};
         const assistCounts: { [key: string]: number } = {};
         team.members.forEach(m => {
-            goalCounts[m._id] = 0;
-            assistCounts[m._id] = 0;
+            if (m) {
+                goalCounts[m._id] = 0;
+                assistCounts[m._id] = 0;
+            }
         });
 
         let wins = 0, losses = 0, draws = 0, matchesPlayed = 0;
 
-        const teamMatches = allTournaments.flatMap(t => t.matches).filter(m => m.teamAId._id === team._id || m.teamBId._id === team._id);
+        const teamMatches = allTournaments.flatMap(t => t.matches).filter(m => (m.teamAId?._id === team._id || m.teamBId?._id === team._id));
 
         teamMatches.filter(m => m.status === MatchStatus.FINISHED).forEach(match => {
             matchesPlayed++;
@@ -179,10 +157,10 @@ const TeamPage: React.FC = () => {
             else losses++;
 
             match.goals.forEach(goal => {
-                if (team.members.some(m => m._id === goal.scorerId._id) && !goal.isOwnGoal) {
+                if (goal.scorerId && team.members.some(m => m?._id === goal.scorerId._id) && !goal.isOwnGoal) {
                     goalCounts[goal.scorerId._id]++;
                 }
-                if (goal.assistId && team.members.some(m => m._id === goal.assistId._id)) {
+                if (goal.assistId && team.members.some(m => m?._id === goal.assistId._id)) {
                     assistCounts[goal.assistId._id]++;
                 }
             });
@@ -191,8 +169,11 @@ const TeamPage: React.FC = () => {
         const topScorerId = Object.keys(goalCounts).length ? Object.keys(goalCounts).reduce((a, b) => goalCounts[a] > goalCounts[b] ? a : b) : null;
         const topAssisterId = Object.keys(assistCounts).length ? Object.keys(assistCounts).reduce((a, b) => assistCounts[a] > assistCounts[b] ? a : b) : null;
 
-        const topScorer = topScorerId ? { player: team.members.find(m => m._id === topScorerId)!, goals: goalCounts[topScorerId] } : null;
-        const topAssister = topAssisterId ? { player: team.members.find(m => m._id === topAssisterId)!, assists: assistCounts[topAssisterId] } : null;
+        const topScorerPlayer = topScorerId ? team.members.find(m => m?._id === topScorerId) : undefined;
+        const topAssisterPlayer = topAssisterId ? team.members.find(m => m?._id === topAssisterId) : undefined;
+
+        const topScorer = (topScorerPlayer && topScorerPlayer.profile) ? { player: topScorerPlayer, goals: goalCounts[topScorerId!] } : null;
+        const topAssister = (topAssisterPlayer && topAssisterPlayer.profile) ? { player: topAssisterPlayer, assists: assistCounts[topAssisterId!] } : null;
 
         const tournamentPositions = teamTournaments.map(tourn => {
             const knockoutRounds = ['Final', 'Semi-Final', 'Quarter-Final', 'Eliminator'];
@@ -205,55 +186,95 @@ const TeamPage: React.FC = () => {
     }, [team, allTournaments, teamTournaments]);
 
 
-    if (isLoading) {
+    if (isAppLoading || !team) {
         return <div className="text-center p-10"><FootballIcon className="h-12 w-12 mx-auto text-green-500 animate-spin"/></div>;
     }
 
-    if (error || !team) {
-        return <div className="text-center text-red-500">{error || 'Team could not be loaded.'}</div>;
-    }
+    const isAdmin = team.adminIds.some(admin => admin?._id === currentUser?._id);
+
+    const showMessage = (type: 'success' | 'error', text: string) => {
+        setMessage({ type, text });
+        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+    };
 
     const copyInviteCode = () => {
         navigator.clipboard.writeText(team.inviteCode);
-        setMessage({ type: 'success', text: 'Invite code copied!' });
-        setTimeout(() => setMessage({ type: '', text: '' }), 2000);
+        showMessage('success', 'Invite code copied!');
     };
     
     const handleAddMember = async () => {
-        if (!memberIdToAdd || !team) return;
-        const result = await addMemberToTeam(team._id, memberIdToAdd);
-        setMessage({ type: result.success ? 'success' : 'error', text: result.message });
-        if (result.success) {
-            setMemberIdToAdd('');
+        if (!memberIdToAdd || !team || isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            const result = await addMemberToTeam(team._id, memberIdToAdd);
+            showMessage(result.success ? 'success' : 'error', result.message);
+            if (result.success) {
+                setMemberIdToAdd('');
+            }
+        } catch (err: any) {
+            showMessage('error', err.message || 'An error occurred.');
+        } finally {
+            setIsSubmitting(false);
         }
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
     };
 
     const handleRemoveMember = async (memberId: string) => {
-        if (!team) return;
+        if (!team || isSubmitting) return;
         if (window.confirm("Are you sure you want to remove this player from the team?")) {
-            const result = await removeMemberFromTeam(team._id, memberId);
-            setMessage({ type: result.success ? 'success' : 'error', text: result.message });
-            setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+            setIsSubmitting(true);
+            try {
+                const result = await removeMemberFromTeam(team._id, memberId);
+                showMessage(result.success ? 'success' : 'error', result.message);
+                // The component will auto-update from context, so no local state management needed.
+                // The menu will disappear as the player is removed from the list.
+            } catch (err: any) {
+                showMessage('error', err.message || 'An error occurred.');
+            } finally {
+                setIsSubmitting(false);
+                setActiveMenu(null);
+            }
         }
-        setActiveMenu(null);
     };
     
     const handleToggleAdmin = async (memberId: string) => {
-        if (!team) return;
+    if (!team || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
         const result = await toggleTeamAdmin(team._id, memberId);
-        setMessage({ type: result.success ? 'success' : 'error', text: result.message });
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+        showMessage(result.success ? 'success' : 'error', result.message);
+
+        if (result.success) {
+            // 🔑 Re-fetch updated team so 🛡️ icon updates immediately
+            await updateTeam(team._id);
+        }
+    } catch (err: any) {
+        showMessage('error', err.message || 'An error occurred.');
+    } finally {
+        setIsSubmitting(false);
         setActiveMenu(null);
-    };
+    }
+};
+
     
     const handleSetRole = async (memberId: string, role: 'captain' | 'viceCaptain') => {
-        if (!team) return;
-        await setTeamRole(team._id, memberId, role);
-        setMessage({ type: 'success', text: `Role updated successfully.`});
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+    if (!team || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+        const result = await setTeamRole(team._id, memberId, role);
+        showMessage(result.success ? 'success' : 'error', result.message);
+
+        if (result.success) {
+            // 🔑 Force re-fetch updated team so UI (C/VC labels) updates
+            await updateTeam(team._id);
+        }
+    } catch (err: any) {
+        showMessage('error', err.message || 'An error occurred.');
+    } finally {
+        setIsSubmitting(false);
         setActiveMenu(null);
-    };
+    }
+};
+
 
     return (
         <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
@@ -269,7 +290,7 @@ const TeamPage: React.FC = () => {
                     <div className="flex items-center gap-4">
                         <h1 className="text-4xl font-bold">{team.name}</h1>
                         {isAdmin && (
-                            <button onClick={() => setIsEditModalOpen(true)} className="text-gray-400 hover:text-white" title="Edit Team Details">
+                            <button onClick={() => setIsEditModalOpen(true)} className="text-gray-400 hover:text-white" title="Edit Team Details" disabled={isSubmitting}>
                                 <EditIcon />
                             </button>
                         )}
@@ -315,8 +336,11 @@ const TeamPage: React.FC = () => {
                                     onChange={(e) => setMemberIdToAdd(e.target.value)}
                                     placeholder="Enter Player's Unique ID"
                                     className="flex-grow bg-gray-800 text-white p-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    disabled={isSubmitting}
                                 />
-                                <button onClick={handleAddMember} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Add</button>
+                                <button onClick={handleAddMember} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500" disabled={isSubmitting || !memberIdToAdd}>
+                                    {isSubmitting ? 'Adding...' : 'Add'}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -328,6 +352,8 @@ const TeamPage: React.FC = () => {
                     <h2 className="text-2xl font-semibold mb-4 border-b-2 border-gray-700 pb-2">Team Members ({team.members.length})</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {team.members.map((member: User) => {
+                             if (!member || !member.profile) return null;
+                            const isMemberAdmin = team.adminIds.some(admin => admin?._id === member._id);
                             return (
                                 <div key={member._id} className="bg-gray-700 p-4 rounded-lg flex items-center justify-between gap-4">
                                     <div className="flex items-center gap-4">
@@ -340,11 +366,11 @@ const TeamPage: React.FC = () => {
                                         )}
                                         <div>
                                             <Link to={`/player/${member._id}`} className="hover:underline">
-                                                <p className="font-bold flex items-center gap-1.5">
+                                                <p className="font-bold flex items-center gap-1">
                                                     {member.profile.name}
-                                                    {team.captainId === member._id && <span title="Captain" className="text-yellow-400"><StarIcon /></span>}
-                                                    {team.viceCaptainId === member._id && <span title="Vice-Captain" className="text-gray-300"><StarIcon /></span>}
-                                                    {team.adminIds.includes(member._id) && <span title="Admin" className="text-blue-400"><ShieldCheckIcon /></span>}
+                                                    {team.captainId?._id === member._id && <span className="text-xs font-semibold text-yellow-400 ml-1">(C)</span>}
+                                                    {team.viceCaptainId?._id === member._id && <span className="text-xs font-semibold text-gray-300 ml-1">(VC)</span>}
+                                                    {isMemberAdmin && <span title="Admin" className="text-blue-400 ml-1.5">🛡️</span>}
                                                 </p>
                                             </Link>
                                             <p className="text-sm text-gray-400">{member.profile.position}</p>
@@ -352,17 +378,17 @@ const TeamPage: React.FC = () => {
                                     </div>
                                     {isAdmin && currentUser?._id !== member._id && (
                                         <div className="relative">
-                                            <button onClick={() => setActiveMenu(activeMenu === member._id ? null : member._id)} className="text-gray-400 hover:text-white p-1 rounded-full">
+                                            <button onClick={() => setActiveMenu(activeMenu === member._id ? null : member._id)} className="text-gray-400 hover:text-white p-1 rounded-full disabled:opacity-50" disabled={isSubmitting}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
                                             </button>
                                             {activeMenu === member._id && (
                                                 <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg z-10 border border-gray-600">
                                                     <ul className="py-1">
-                                                        <li><button onClick={() => handleSetRole(member._id, 'captain')} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700">Make Captain</button></li>
-                                                        <li><button onClick={() => handleSetRole(member._id, 'viceCaptain')} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700">Make Vice-Captain</button></li>
-                                                        <li><button onClick={() => handleToggleAdmin(member._id)} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700">{team.adminIds.includes(member._id) ? 'Demote from Admin' : 'Promote to Admin'}</button></li>
+                                                        <li><button onClick={() => handleSetRole(member._id, 'captain')} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50" disabled={isSubmitting}>{team.captainId?._id === member._id ? 'Remove Captain' : 'Make Captain'}</button></li>
+                                                        <li><button onClick={() => handleSetRole(member._id, 'viceCaptain')} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50" disabled={isSubmitting}>{team.viceCaptainId?._id === member._id ? 'Remove Vice-Captain' : 'Make Vice-Captain'}</button></li>
+                                                        <li><button onClick={() => handleToggleAdmin(member._id)} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50" disabled={isSubmitting}>{isMemberAdmin ? 'Remove Admin' : 'Make Admin'}</button></li>
                                                         <li><div className="border-t border-gray-600 my-1"></div></li>
-                                                        <li><button onClick={() => handleRemoveMember(member._id)} className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700"><TrashIcon />Remove Player</button></li>
+                                                        <li><button onClick={() => handleRemoveMember(member._id)} className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700 disabled:opacity-50" disabled={isSubmitting}><TrashIcon />Remove Player</button></li>
                                                     </ul>
                                                 </div>
                                             )}
@@ -388,7 +414,7 @@ const TeamPage: React.FC = () => {
                     )}
                 </div>
             </div>
-             {isEditModalOpen && (
+             {isEditModalOpen && team && (
                 <EditTeamModal team={team} onClose={() => setIsEditModalOpen(false)} onSave={updateTeam} />
             )}
         </div>
@@ -412,12 +438,8 @@ const EditTeamModal: React.FC<{ team: Team; onClose: () => void; onSave: (teamId
     const handleSave = async () => {
         setIsLoading(true);
         let logoUrl: string | null = team.logoUrl;
-        // Check if there is a new logo file or if the preview has changed to a data URL
         if (logo) {
             logoUrl = await fileToDataUri(logo);
-        } else if (logoPreview !== team.logoUrl) {
-             // Case where user might clear the image, etc. For now we assume they can only upload a new one
-             // if they remove it, logoUrl should be null. Let's assume for now they just upload.
         }
         await onSave(team._id, { name, logoUrl });
         setIsLoading(false);

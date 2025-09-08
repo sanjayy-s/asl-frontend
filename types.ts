@@ -28,9 +28,9 @@ export interface Team {
   _id: string; 
   name: string;
   logoUrl: string | null;
-  adminIds: string[]; 
-  captainId?: string;
-  viceCaptainId?: string;
+  adminIds: User[]; // Changed from string[] to User[] to match backend population
+  captainId?: User; // Changed to optional User
+  viceCaptainId?: User; // Changed to optional User
   members: User[];
   inviteCode: string;
 }
@@ -86,7 +86,7 @@ export interface Tournament {
   _id: string; 
   name: string;
   logoUrl: string | null;
-  adminId: string;
+  adminId: string; // This remains a string as it's not populated on the main tournament object
   teams: Team[];
   matches: Match[];
   isSchedulingDone?: boolean;
@@ -118,10 +118,10 @@ export interface AppContextType {
   createTeam: (name: string, logo: string | null) => Promise<Team>;
   updateTeam: (teamId: string, details: { name?: string, logoUrl?: string | null }) => Promise<void>;
   joinTeam: (code: string) => Promise<Team>;
-  addMemberToTeam: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string }>;
-  removeMemberFromTeam: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string }>;
-  toggleTeamAdmin: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string }>;
-  setTeamRole: (teamId: string, memberId: string, role: 'captain' | 'viceCaptain') => Promise<void>;
+  addMemberToTeam: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string; team?: Team }>;
+  removeMemberFromTeam: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string; team?: Team }>;
+  toggleTeamAdmin: (teamId: string, memberId: string) => Promise<{ success: boolean; message: string; team?: Team }>;
+  setTeamRole: (teamId: string, memberId: string, role: 'captain' | 'viceCaptain') => Promise<{ success: boolean; message: string; team?: Team }>;
   getTeamById: (id: string) => Promise<Team | undefined>;
   getUserById: (id: string) => Promise<User | undefined>;
   createTournament: (name: string, logo: string | null) => Promise<Tournament>;
@@ -134,9 +134,10 @@ export interface AppContextType {
   addMatchManually: (tournamentId: string, matchData: { teamAId: string, teamBId: string, round: string }) => Promise<void>;
   startMatch: (tournamentId: string, matchId: string) => Promise<void>;
   endMatch: (tournamentId: string, matchId: string, penaltyScores?: { penaltyScoreA: number, penaltyScoreB: number }) => Promise<void>;
-  recordGoal: (tournamentId: string, matchId: string, scorerId: string, assistId?: string, isOwnGoal?: boolean) => Promise<void>;
-  recordCard: (tournamentId: string, matchId: string, playerId: string, cardType: CardType) => Promise<void>;
+  recordGoal: (tournamentId: string, matchId: string, scorerId: string, benefitingTeamId: string, assistId?: string, isOwnGoal?: boolean) => Promise<void>;
+  recordCard: (tournamentId: string, matchId: string, playerId: string, cardType: CardType, teamId: string) => Promise<void>;
   setPlayerOfTheMatch: (tournamentId: string, matchId: string, playerId: string) => Promise<void>;
+  createNotification: (userId: string, message: string, link: string) => void;
   markNotificationAsRead: (notificationId: string) => void;
   markAllNotificationsAsRead: () => void;
 }
