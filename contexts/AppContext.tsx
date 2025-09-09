@@ -4,7 +4,8 @@ import { User, PlayerProfile, Team, Tournament, CardType, Notification, AppConte
 export const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // Define the base URL for your backend API.
-const API_URL = `http://${window.location.hostname}:5001/api`;
+const API_URL = "https://asl-backend-inda.onrender.com/api";
+
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
