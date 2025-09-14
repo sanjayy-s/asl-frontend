@@ -55,14 +55,9 @@ const LiveScoringPage: React.FC = () => {
   const [isOwnGoal, setIsOwnGoal] = useState(false);
   const [scorerId, setScorerId] = useState('');
   const [assistId, setAssistId] = useState('');
-  const [scorerName, setScorerName] = useState('');
-  const [assistName, setAssistName] = useState('');
-  const [goalError, setGoalError] = useState('');
 
   const [cardPlayerId, setCardPlayerId] = useState('');
-  const [cardPlayerName, setCardPlayerName] = useState('');
   const [cardType, setCardType] = useState<CardType>(CardType.YELLOW);
-  const [cardError, setCardError] = useState('');
 
   const [penaltyScores, setPenaltyScores] = useState<{ scoreA: string, scoreB: string }>({ scoreA: '', scoreB: '' });
   const [endMatchError, setEndMatchError] = useState('');
@@ -102,38 +97,23 @@ const LiveScoringPage: React.FC = () => {
     setIsOwnGoal(false);
     setScorerId('');
     setAssistId('');
-    setScorerName('');
-    setAssistName('');
-    setGoalError('');
     setGoalModalOpen(true);
   };
   
   const openCardModal = (teamId: string) => {
     setModalTeamId(teamId);
     setCardPlayerId('');
-    setCardPlayerName('');
     setCardType(CardType.YELLOW);
-    setCardError('');
     setCardModalOpen(true);
   }
 
   const handleRecordGoal = async () => {
-    if ((!scorerId && !scorerName.trim()) || !tournamentId || !matchId || !modalTeamId) return;
+    if (!scorerId || !tournamentId || !matchId || !modalTeamId || isSubmitting) return;
     setIsSubmitting(true);
-    setGoalError('');
     try {
-        const details = {
-            benefitingTeamId: modalTeamId,
-            isOwnGoal,
-            scorerId: scorerName.trim() ? undefined : (scorerId || undefined),
-            scorerName: scorerName.trim() || undefined,
-            assistId: assistName.trim() ? undefined : (assistId || undefined),
-            assistName: assistName.trim() || undefined,
-        };
-        await recordGoal(tournamentId, matchId, details);
+        await recordGoal(tournamentId, matchId, scorerId, modalTeamId, assistId || undefined, isOwnGoal);
         setGoalModalOpen(false);
-    } catch (error: any) {
-        setGoalError(error.message || "An unknown error occurred.");
+    } catch (error) {
         console.error("Failed to record goal:", error);
     } finally {
         setIsSubmitting(false);
@@ -141,20 +121,12 @@ const LiveScoringPage: React.FC = () => {
   };
 
   const handleRecordCard = async () => {
-    if ((!cardPlayerId && !cardPlayerName.trim()) || !tournamentId || !matchId || !modalTeamId) return;
+    if (!cardPlayerId || !tournamentId || !matchId || !modalTeamId || isSubmitting) return;
     setIsSubmitting(true);
-    setCardError('');
     try {
-        const details = {
-            teamId: modalTeamId,
-            cardType,
-            playerId: cardPlayerName.trim() ? undefined : (cardPlayerId || undefined),
-            playerName: cardPlayerName.trim() || undefined,
-        };
-        await recordCard(tournamentId, matchId, details);
+        await recordCard(tournamentId, matchId, cardPlayerId, cardType, modalTeamId);
         setCardModalOpen(false);
-    } catch(error: any) {
-        setCardError(error.message || "An unknown error occurred.");
+    } catch(error) {
         console.error("Failed to record card", error);
     } finally {
         setIsSubmitting(false);
@@ -248,7 +220,6 @@ const LiveScoringPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-bold mb-4">Record Goal</h3>
-            {goalError && <p className="text-red-400 text-sm bg-red-500/10 p-3 rounded-md mb-4">{goalError}</p>}
             <div className="space-y-4">
               <div className="flex items-center">
                 <input type="checkbox" id="ownGoal" checked={isOwnGoal} onChange={(e) => setIsOwnGoal(e.target.checked)} className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-green-500 focus:ring-green-500"/>
@@ -256,24 +227,22 @@ const LiveScoringPage: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">Scorer</label>
-                <select value={scorerId} onChange={e => { setScorerId(e.target.value); if (e.target.value) setScorerName(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
-                  <option value="">Select scorer from roster</option>
+                <select value={scorerId} onChange={(e) => setScorerId(e.target.value)} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
+                  <option value="">Select scorer</option>
                   {scorerPlayers.map((p) => (<option key={p._id} value={p._id}>{p.profile.name}</option>))}
                 </select>
-                 <input type="text" placeholder="Or enter scorer name manually" value={scorerName} onChange={e => { setScorerName(e.target.value); if(e.target.value) setScorerId(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-2 text-sm" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">Assist (Optional)</label>
-                <select value={assistId} onChange={e => { setAssistId(e.target.value); if (e.target.value) setAssistName(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
-                  <option value="">Select assist from roster</option>
+                <select value={assistId} onChange={(e) => setAssistId(e.target.value)} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
+                  <option value="">Select assist provider</option>
                   {assistPlayers.map((p) => (<option key={p._id} value={p._id}>{p.profile.name}</option>))}
                 </select>
-                <input type="text" placeholder="Or enter assist name manually" value={assistName} onChange={e => { setAssistName(e.target.value); if(e.target.value) setAssistId(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-2 text-sm" />
               </div>
             </div>
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setGoalModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg"> Cancel </button>
-              <button onClick={handleRecordGoal} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={(!scorerId && !scorerName.trim()) || isSubmitting}>
+              <button onClick={handleRecordGoal} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!scorerId || isSubmitting}>
                  {isSubmitting ? 'Confirming...' : 'Confirm Goal'}
               </button>
             </div>
@@ -285,15 +254,13 @@ const LiveScoringPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-bold mb-4">Record Card</h3>
-            {cardError && <p className="text-red-400 text-sm bg-red-500/10 p-3 rounded-md mb-4">{cardError}</p>}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300">Player</label>
-                <select value={cardPlayerId} onChange={e => { setCardPlayerId(e.target.value); if (e.target.value) setCardPlayerName(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
-                  <option value="">Select player from roster</option>
+                <select value={cardPlayerId} onChange={(e) => setCardPlayerId(e.target.value)} className="w-full bg-gray-700 text-white p-2 rounded mt-1">
+                  <option value="">Select player</option>
                   {modalTeamPlayers.map((p) => (<option key={p._id} value={p._id}>{p.profile.name}</option>))}
                 </select>
-                 <input type="text" placeholder="Or enter player name manually" value={cardPlayerName} onChange={e => { setCardPlayerName(e.target.value); if(e.target.value) setCardPlayerId(''); }} className="w-full bg-gray-700 text-white p-2 rounded mt-2 text-sm" />
               </div>
                <div>
                 <label className="block text-sm font-medium text-gray-300">Card Type</label>
@@ -311,7 +278,7 @@ const LiveScoringPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setCardModalOpen(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancel</button>
-              <button onClick={handleRecordCard} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={(!cardPlayerId && !cardPlayerName.trim()) || isSubmitting}>
+              <button onClick={handleRecordCard} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!cardPlayerId || isSubmitting}>
                  {isSubmitting ? 'Confirming...' : 'Confirm Card'}
               </button>
             </div>
