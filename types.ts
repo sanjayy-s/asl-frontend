@@ -1,5 +1,3 @@
-
-
 export enum PlayerPosition {
   FORWARD = 'Forward',
   MIDFIELDER = 'Midfielder',
@@ -37,10 +35,8 @@ export interface Team {
 
 export interface Goal {
   _id?: string;
-  scorerId?: User;
-  scorerName?: string;
+  scorerId: User;
   assistId?: User;
-  assistName?: string;
   minute: number;
   isOwnGoal: boolean;
   teamId: string; // The ID of the team that benefits from the goal
@@ -53,8 +49,7 @@ export enum CardType {
 
 export interface Card {
   _id?: string;
-  playerId?: User;
-  playerName?: string;
+  playerId: User;
   minute: number;
   type: CardType;
   teamId: string;
@@ -83,7 +78,6 @@ export interface Match {
   round: string; // e.g., "Group Stage", "Quarter-final"
   winnerId?: string | null; // null for a draw
   playerOfTheMatchId?: User;
-  playerOfTheMatchName?: string;
 }
 
 export interface Tournament {
@@ -136,12 +130,11 @@ export interface AppContextType {
   scheduleMatches: (tournamentId: string) => Promise<void>;
   updateMatchDetails: (tournamentId: string, matchId: string, details: Partial<Pick<Match, 'teamAId' | 'teamBId' | 'date' | 'time'>>) => Promise<void>;
   addMatchManually: (tournamentId: string, matchData: { teamAId: string, teamBId: string, round: string }) => Promise<void>;
-  deleteMatch: (tournamentId: string, matchId: string) => Promise<void>;
   startMatch: (tournamentId: string, matchId: string) => Promise<void>;
   endMatch: (tournamentId: string, matchId: string, penaltyScores?: { penaltyScoreA: number, penaltyScoreB: number }) => Promise<void>;
-  recordGoal: (tournamentId: string, matchId: string, details: { scorerId?: string; scorerName?: string; benefitingTeamId: string; assistId?: string; assistName?: string; isOwnGoal?: boolean; }) => Promise<void>;
-  recordCard: (tournamentId: string, matchId: string, details: { playerId?: string; playerName?: string; cardType: CardType; teamId: string; }) => Promise<void>;
-  setPlayerOfTheMatch: (tournamentId: string, matchId: string, details: { playerId?: string; playerName?: string; }) => Promise<void>;
+  recordGoal: (tournamentId: string, matchId: string, scorerId: string, benefitingTeamId: string, assistId?: string, isOwnGoal?: boolean) => Promise<void>;
+  recordCard: (tournamentId: string, matchId: string, playerId: string, cardType: CardType, teamId: string) => Promise<void>;
+  setPlayerOfTheMatch: (tournamentId: string, matchId: string, playerId: string) => Promise<void>;
   createNotification: (userId: string, message: string, link: string) => void;
   markNotificationAsRead: (notificationId: string) => void;
   markAllNotificationsAsRead: () => void;
