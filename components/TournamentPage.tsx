@@ -155,7 +155,7 @@ const TournamentPage: React.FC = () => {
         }
     };
 
-    const handleSetPotm = async (details: { playerId?: string, playerName?: string }) => {
+    const handleSetPotm = async (details: { playerId: string; }) => {
         if (potmModalMatch && tournamentId) {
             await setPlayerOfTheMatch(tournamentId, potmModalMatch._id, details);
             setPotmModalMatch(null);
@@ -170,17 +170,17 @@ const TournamentPage: React.FC = () => {
 
     return (
         <div className="bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg">
-            <div className="flex flex-col text-center md:text-left md:flex-row items-center gap-6 mb-6">
+            <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
                  {tournament.logoUrl ? (
-                    <img src={tournament.logoUrl} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover flex-shrink-0" />
+                    <img src={tournament.logoUrl} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover" />
                 ) : (
-                    <div className="w-24 h-24 rounded-full border-4 border-purple-500 bg-gray-700 flex items-center justify-center flex-shrink-0">
+                    <div className="w-24 h-24 rounded-full border-4 border-purple-500 bg-gray-700 flex items-center justify-center">
                         <span className="text-4xl font-bold text-gray-500">{tournament.name.charAt(0)}</span>
                     </div>
                 )}
                 <div className="flex-grow">
-                     <div className="flex items-center justify-center md:justify-start gap-4">
-                        <h1 className="text-3xl sm:text-4xl font-bold">{tournament.name}</h1>
+                     <div className="flex items-center gap-4">
+                        <h1 className="text-4xl font-bold">{tournament.name}</h1>
                         {isAdmin && (
                             <button onClick={() => setIsEditModalOpen(true)} className="text-gray-400 hover:text-white" title="Edit Tournament Details">
                                 <EditIcon />
@@ -188,7 +188,7 @@ const TournamentPage: React.FC = () => {
                         )}
                     </div>
                     {isAdmin && (
-                        <div className="mt-2 flex justify-center md:justify-start">
+                        <div className="mt-2">
                             <span className="text-gray-400">Invite Code: </span>
                             <span onClick={copyInviteCode} className="font-mono bg-gray-700 text-purple-400 px-3 py-1 rounded cursor-pointer hover:bg-gray-600 flex items-center gap-2">
                                 {tournament.inviteCode}
@@ -209,7 +209,7 @@ const TournamentPage: React.FC = () => {
                 <div className="bg-gray-700 p-4 rounded-lg mb-6">
                     <h3 className="text-lg font-semibold mb-3">Admin Controls</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex gap-2">
                             <input
                                 type="text"
                                 value={teamIdToAdd}
@@ -217,9 +217,9 @@ const TournamentPage: React.FC = () => {
                                 placeholder="Enter Team ID or Invite Code"
                                 className="w-full bg-gray-800 text-white p-2 rounded border border-gray-600"
                             />
-                            <button onClick={handleAddTeam} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex-shrink-0" disabled={!teamIdToAdd}>Add Team</button>
+                            <button onClick={handleAddTeam} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!teamIdToAdd}>Add Team</button>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start">
+                        <div className="flex flex-wrap items-center gap-2">
                             <button onClick={handleAutoSchedule} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Auto-Schedule</button>
                             <button onClick={() => setIsMatchModalOpen(true)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg">Add Match Manually</button>
                         </div>
@@ -228,9 +228,9 @@ const TournamentPage: React.FC = () => {
             )}
 
             <div className="border-b border-gray-700 mb-6">
-                <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto whitespace-nowrap pb-2">
+                <nav className="flex space-x-4">
                     {(['fixtures', 'table', 'leaders', 'teams'] as Tab[]).map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab)} className={`capitalize py-2 px-3 sm:px-4 font-semibold rounded-t-lg text-sm sm:text-base ${activeTab === tab ? 'bg-gray-700 text-green-400' : 'text-gray-400 hover:bg-gray-700/50'}`}>
+                        <button key={tab} onClick={() => setActiveTab(tab)} className={`capitalize py-2 px-4 font-semibold rounded-t-lg ${activeTab === tab ? 'bg-gray-700 text-green-400' : 'text-gray-400 hover:bg-gray-700/50'}`}>
                             {tab}
                         </button>
                     ))}
@@ -360,7 +360,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                     const teamB = match.teamBId;
                     if (!teamA || !teamB) return null;
                     const potm = match.playerOfTheMatchId;
-                    const potmName = potm?.profile?.name || match.playerOfTheMatchName;
+                    const potmName = potm?.profile?.name;
                     const timelineEvents = getTimelineEvents(match);
                     const hasPenalties = typeof match.penaltyScoreA === 'number' && typeof match.penaltyScoreB === 'number';
                     
@@ -387,56 +387,47 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                 )}
                                 </div>
                             </div>
-
-                            <div className="sm:flex sm:items-center sm:justify-between mt-2">
-                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 flex-grow">
-                                    <Link to={`/team/${teamA._id}`} className="flex items-center gap-2 sm:gap-3 overflow-hidden hover:opacity-80">
-                                        {teamA.logoUrl ? (
-                                            <img src={teamA.logoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt={teamA.name}/>
-                                        ) : (
-                                            <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
-                                                <span className="font-bold text-gray-400 text-sm">{teamA.name.charAt(0)}</span>
-                                            </div>
-                                        )}
-                                        <span className={`${getTeamClasses(teamA._id, match)} truncate`}>{teamA.name}</span>
-                                    </Link>
-
-                                    {match.status === MatchStatus.FINISHED ? (
-                                        <div className="text-center">
-                                            <div className="font-bold text-lg sm:text-xl">{match.scoreA} - {match.scoreB}</div>
-                                            <div className="text-xs text-gray-400">
-                                                {match.winnerId === null ? 'Draw' : 'Final'}
-                                                {hasPenalties && <span className="font-semibold text-gray-300"> (Pen {match.penaltyScoreA}-{match.penaltyScoreB})</span>}
-                                            </div>
-                                        </div>
-                                    ) : match.status === MatchStatus.LIVE ? (
-                                        <div className="text-center text-red-500 animate-pulse font-bold text-sm sm:text-base">LIVE<br/>({match.scoreA}-{match.scoreB})</div>
+                            <div className="flex items-center justify-between mt-2">
+                                <Link to={`/team/${teamA._id}`} className="flex items-center gap-3 w-2/5 hover:opacity-80">
+                                    {teamA.logoUrl ? (
+                                        <img src={teamA.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamA.name}/>
                                     ) : (
-                                        <div className="text-center text-gray-400 text-xs sm:text-sm flex-shrink-0">
-                                            <div>{formatDate(match.date)}</div>
-                                            <div>{match.time || 'TBD'}</div>
+                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                            <span className="font-bold text-gray-400 text-sm">{teamA.name.charAt(0)}</span>
                                         </div>
                                     )}
-
-                                    <Link to={`/team/${teamB._id}`} className="flex items-center gap-2 sm:gap-3 justify-end overflow-hidden hover:opacity-80">
-                                        <span className={`${getTeamClasses(teamB._id, match)} text-right truncate`}>{teamB.name}</span>
-                                        {teamB.logoUrl ? (
-                                            <img src={teamB.logoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt={teamB.name}/>
-                                        ) : (
-                                            <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
-                                                <span className="font-bold text-gray-400 text-sm">{teamB.name.charAt(0)}</span>
-                                            </div>
-                                        )}
-                                    </Link>
-                                </div>
-
-                                {isAdmin && match.status === MatchStatus.SCHEDULED && (
-                                    <div className="text-center mt-3 sm:mt-0 sm:ml-4 flex-shrink-0">
-                                        <button onClick={(e) => { e.stopPropagation(); handleStartMatch(match._id); }} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-4 rounded text-sm w-full sm:w-auto">Start</button>
+                                    <span className={getTeamClasses(teamA._id, match)}>{teamA.name}</span>
+                                </Link>
+                                {match.status === MatchStatus.FINISHED ? (
+                                     <div className="text-center">
+                                        <div className="font-bold text-xl">{match.scoreA} - {match.scoreB}</div>
+                                        <div className="text-xs text-gray-400">
+                                            {match.winnerId === null ? 'Draw' : 'Final'}
+                                            {hasPenalties && <span className="font-semibold text-gray-300"> (Pen {match.penaltyScoreA} - {match.penaltyScoreB})</span>}
+                                        </div>
+                                    </div>
+                                ) : match.status === MatchStatus.LIVE ? (
+                                    <div className="text-center text-red-500 animate-pulse">LIVE ({match.scoreA} - {match.scoreB})</div>
+                                ) : (
+                                    <div className="text-center text-gray-400 text-sm">
+                                        <div>{formatDate(match.date)}</div>
+                                        <div>{match.time || ' '}</div>
                                     </div>
                                 )}
+                                <Link to={`/team/${teamB._id}`} className="flex items-center gap-3 w-2/5 justify-end hover:opacity-80">
+                                    <span className={`${getTeamClasses(teamB._id, match)} text-right`}>{teamB.name}</span>
+                                    {teamB.logoUrl ? (
+                                        <img src={teamB.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamB.name}/>
+                                    ) : (
+                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                            <span className="font-bold text-gray-400 text-sm">{teamB.name.charAt(0)}</span>
+                                        </div>
+                                    )}
+                                </Link>
+                                {isAdmin && match.status === MatchStatus.SCHEDULED && (
+                                    <button onClick={(e) => { e.stopPropagation(); handleStartMatch(match._id); }} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-sm ml-4">Start</button>
+                                )}
                             </div>
-
                              {viewingDetailsMatchId === match._id && (
                                 <div className="mt-4 border-t border-gray-600 pt-3 text-sm">
                                     <h4 className="font-bold mb-2">Match Timeline:</h4>
@@ -445,10 +436,10 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                             {timelineEvents.map((event, index) => {
                                                 if (event.eventType === 'goal') {
                                                     const goal = event as Goal & { eventType: 'goal' };
-                                                    const scorer = goal.scorerId;
-                                                    const scorerName = scorer?.profile?.name || goal.scorerName || 'Unknown Player';
+                                                    const scorer = goal.scorerId!; // Now required
+                                                    const scorerName = scorer.profile.name;
                                                     const assister = goal.assistId;
-                                                    const assisterName = assister?.profile?.name || goal.assistName;
+                                                    const assisterName = assister?.profile?.name;
                                                     const benefitingTeam = goal.teamId === teamA._id ? teamA : teamB;
                                                     return (
                                                         <li key={`goal-${index}`} className="flex items-center gap-2">
@@ -463,8 +454,8 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                     );
                                                 } else {
                                                     const card = event as Card & { eventType: 'card' };
-                                                    const player = card.playerId;
-                                                    const playerName = player?.profile?.name || card.playerName || 'Unknown Player';
+                                                    const player = card.playerId!; // Now required
+                                                    const playerName = player.profile.name;
                                                     return (
                                                         <li key={`card-${index}`} className="flex items-center gap-2">
                                                             {card.type === CardType.YELLOW ? <CardYellowIcon /> : <CardRedIcon />}
@@ -488,25 +479,16 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                     <div className="mt-4">
                                         <h4 className="font-bold mb-2 flex items-center gap-2"><TrophyIcon className="text-yellow-400 w-5 h-5" /> Player of the Match</h4>
                                         {potmName ? (
-                                            potm ? (
-                                                <Link to={`/player/${potm._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
-                                                    {potm.profile.imageUrl ? (
-                                                        <img src={potm.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
-                                                    ) : (
-                                                        <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
-                                                            <span className="text-lg font-bold text-gray-400">{potm.profile.name.charAt(0)}</span>
-                                                        </div>
-                                                    )}
-                                                    <span className="font-bold">{potmName}</span>
-                                                </Link>
-                                            ) : (
-                                                 <div className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit">
+                                            <Link to={`/player/${potm!._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
+                                                {potm!.profile.imageUrl ? (
+                                                    <img src={potm!.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm!.profile.name}/>
+                                                ) : (
                                                     <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
-                                                        <span className="text-lg font-bold text-gray-400">?</span>
+                                                        <span className="text-lg font-bold text-gray-400">{potm!.profile.name.charAt(0)}</span>
                                                     </div>
-                                                    <span className="font-bold">{potmName}</span>
-                                                </div>
-                                            )
+                                                )}
+                                                <span className="font-bold">{potmName}</span>
+                                            </Link>
                                         ) : (
                                             <p className="text-gray-400">Not selected yet.</p>
                                         )}
@@ -583,26 +565,24 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
 
     return (
         <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left">
                 <thead className="bg-gray-700">
                     <tr>
-                        <th className="p-2 sm:p-3">Team</th>
-                        <th className="p-2 sm:p-3">P</th>
-                        <th className="p-2 sm:p-3">W</th>
-                        <th className="p-2 sm:p-3">D</th>
-                        <th className="p-2 sm:p-3">L</th>
-                        <th className="p-2 sm:p-3 hidden sm:table-cell">GF</th>
-                        <th className="p-2 sm:p-3 hidden sm:table-cell">GA</th>
-                        <th className="p-2 sm:p-3">GD</th>
-                        <th className="p-2 sm:p-3">Pts</th>
+                        <th className="p-3">Team</th>
+                        <th className="p-3">P</th>
+                        <th className="p-3">W</th>
+                        <th className="p-3">D</th>
+                        <th className="p-3">L</th>
+                        <th className="p-3">GD</th>
+                        <th className="p-3">Pts</th>
                     </tr>
                 </thead>
                 <tbody>
                     {tableData.map((t, i) => (
                         <tr key={t._id} className="border-b border-gray-700">
-                            <td className="p-2 sm:p-3">
+                            <td className="p-3">
                                 <Link to={`/team/${t._id}`} className="flex items-center gap-2 font-bold hover:opacity-80">
-                                    <span className="w-6 text-center flex-shrink-0">{i+1}</span> 
+                                    <span className="w-6">{i+1}</span> 
                                     {t.logoUrl ? (
                                         <img src={t.logoUrl} alt={t.name} className="w-6 h-6 rounded-full object-cover"/> 
                                     ) : (
@@ -610,18 +590,15 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
                                             <span className="font-bold text-gray-400 text-xs">{t.name.charAt(0)}</span>
                                         </div>
                                     )}
-                                    <span className="hidden sm:inline">{t.name}</span>
-                                    <span className="sm:hidden">{t.name.substring(0, 3).toUpperCase()}</span>
+                                    {t.name}
                                 </Link>
                             </td>
-                            <td className="p-2 sm:p-3">{t.p}</td>
-                            <td className="p-2 sm:p-3">{t.w}</td>
-                            <td className="p-2 sm:p-3">{t.d}</td>
-                            <td className="p-2 sm:p-3">{t.l}</td>
-                            <td className="p-2 sm:p-3 hidden sm:table-cell">{t.gf}</td>
-                            <td className="p-2 sm:p-3 hidden sm:table-cell">{t.ga}</td>
-                            <td className="p-2 sm:p-3">{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
-                            <td className="p-2 sm:p-3 font-bold">{t.pts}</td>
+                            <td className="p-3">{t.p}</td>
+                            <td className="p-3">{t.w}</td>
+                            <td className="p-3">{t.d}</td>
+                            <td className="p-3">{t.l}</td>
+                            <td className="p-3">{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
+                            <td className="p-3 font-bold">{t.pts}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -632,37 +609,25 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
 
 const LeadersTab: React.FC<{ matches: Match[] }> = ({ matches }) => {
     const { topScorers, topAssisters } = useMemo(() => {
-        const goalCounts: { [key: string]: { player?: User, name: string, goals: number } } = {};
-        const assistCounts: { [key: string]: { player?: User, name: string, assists: number } } = {};
+        const goalCounts: { [key: string]: { player: User, name: string, goals: number } } = {};
+        const assistCounts: { [key: string]: { player: User, name: string, assists: number } } = {};
 
         matches.forEach(m => {
             m.goals.forEach(g => {
                 // Process scorers
-                if (g.scorerId && g.scorerId.profile && !g.isOwnGoal) {
+                if (g.scorerId?.profile && !g.isOwnGoal) {
                     const key = g.scorerId._id;
                     if (!goalCounts[key]) {
                         goalCounts[key] = { player: g.scorerId, name: g.scorerId.profile.name, goals: 0 };
                     }
                     goalCounts[key].goals++;
-                } else if (g.scorerName && !g.isOwnGoal) {
-                    const key = g.scorerName.trim().toLowerCase();
-                    if (!goalCounts[key]) {
-                        goalCounts[key] = { name: g.scorerName.trim(), goals: 0 };
-                    }
-                    goalCounts[key].goals++;
                 }
 
                 // Process assists
-                if (g.assistId && g.assistId.profile) {
+                if (g.assistId?.profile) {
                     const key = g.assistId._id;
                     if (!assistCounts[key]) {
                         assistCounts[key] = { player: g.assistId, name: g.assistId.profile.name, assists: 0 };
-                    }
-                    assistCounts[key].assists++;
-                } else if (g.assistName) {
-                    const key = g.assistName.trim().toLowerCase();
-                    if (!assistCounts[key]) {
-                        assistCounts[key] = { name: g.assistName.trim(), assists: 0 };
                     }
                     assistCounts[key].assists++;
                 }
@@ -680,34 +645,24 @@ const LeadersTab: React.FC<{ matches: Match[] }> = ({ matches }) => {
         return { topScorers: sortedScorers, topAssisters: sortedAssisters };
     }, [matches]);
 
-    const Leaderboard: React.FC<{title: string; data: { player?: User, name: string, [key: string]: any }[], metric: string}> = ({title, data, metric}) => {
+    const Leaderboard: React.FC<{title: string; data: { player: User, name: string, [key: string]: any }[], metric: string}> = ({title, data, metric}) => {
         return (
             <div className="bg-gray-700 p-4 rounded-lg">
                 <h4 className="text-lg font-bold mb-3">{title}</h4>
                 <ul className="space-y-2">
                     {data.map((item, index) => (
                         <li key={(item.player?._id || item.name) + index} className="flex items-center justify-between text-sm p-2 rounded-md bg-gray-800/50">
-                            {item.player ? (
-                                <Link to={`/player/${item.player._id}`} className="flex items-center gap-3 hover:underline truncate">
-                                    <span className="font-bold w-6 text-center flex-shrink-0">{index + 1}</span>
-                                    {item.player.profile.imageUrl ? (
-                                        <img src={item.player.profile.imageUrl} alt={item.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0"/>
-                                    ) : (
-                                         <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
-                                            <span className="text-sm font-bold text-gray-400">{item.name.charAt(0).toUpperCase()}</span>
-                                        </div>
-                                    )}
-                                    <span className="truncate">{item.name}</span>
-                                </Link>
-                            ) : (
-                               <div className="flex items-center gap-3 truncate">
-                                    <span className="font-bold w-6 text-center flex-shrink-0">{index + 1}</span>
-                                    <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+                            <Link to={`/player/${item.player._id}`} className="flex items-center gap-3 hover:underline truncate">
+                                <span className="font-bold w-6 text-center flex-shrink-0">{index + 1}</span>
+                                {item.player.profile.imageUrl ? (
+                                    <img src={item.player.profile.imageUrl} alt={item.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0"/>
+                                ) : (
+                                     <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
                                         <span className="text-sm font-bold text-gray-400">{item.name.charAt(0).toUpperCase()}</span>
                                     </div>
-                                    <span className="truncate">{item.name}</span>
-                               </div>
-                            )}
+                                )}
+                                <span className="truncate">{item.name}</span>
+                            </Link>
                             <span className="font-extrabold text-lg text-green-400 ml-2">{item[metric]}</span>
                         </li>
                     ))}
@@ -779,9 +734,8 @@ const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void
     )
 };
 
-const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; onClose: () => void; onSave: (details: { playerId?: string; playerName?: string }) => void; }> = ({ match, tournamentTeams, onClose, onSave }) => {
+const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; onClose: () => void; onSave: (details: { playerId: string; }) => void; }> = ({ match, tournamentTeams, onClose, onSave }) => {
     const [selectedPlayerId, setSelectedPlayerId] = useState(match.playerOfTheMatchId?._id || '');
-    const [manualName, setManualName] = useState(match.playerOfTheMatchName || '');
     const playersInMatch = useMemo(() => {
         const teamA = tournamentTeams.find(t => t._id === match.teamAId._id);
         const teamB = tournamentTeams.find(t => t._id === match.teamBId._id);
@@ -789,53 +743,26 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; o
     }, [match, tournamentTeams]);
 
     const handleSave = () => {
-        if (manualName.trim()) {
-            onSave({ playerName: manualName.trim() });
-        } else if (selectedPlayerId) {
+        if (selectedPlayerId) {
             onSave({ playerId: selectedPlayerId });
-        } else {
-            // Can also be used to clear the POTM
-            onSave({});
         }
+        // The user can't save without selecting a player.
     };
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
             <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
                 <h3 className="text-xl font-bold mb-4">Select Player of the Match</h3>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300">Select from Roster</label>
-                        <select
-                            value={selectedPlayerId}
-                            onChange={(e) => {
-                                setSelectedPlayerId(e.target.value);
-                                if (e.target.value) setManualName('');
-                            }}
-                            className="w-full bg-gray-700 text-white p-2 rounded mt-1"
-                        >
-                            <option value="">-- Choose a player --</option>
-                            {playersInMatch.map(p => <option key={p._id} value={p._id}>{p.profile.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="text-center text-gray-400 text-sm">OR</div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-300">Enter Name Manually</label>
-                        <input
-                            type="text"
-                            value={manualName}
-                            onChange={(e) => {
-                                setManualName(e.target.value);
-                                if (e.target.value) setSelectedPlayerId('');
-                            }}
-                            placeholder="e.g., Guest Player"
-                            className="w-full bg-gray-700 text-white p-2 rounded mt-1"
-                        />
-                    </div>
+                <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">Select from Roster</label>
+                    <select value={selectedPlayerId} onChange={(e) => setSelectedPlayerId(e.target.value)} className="w-full bg-gray-700 text-white p-2 rounded mt-1" required>
+                        <option value="">-- Choose a player --</option>
+                        {playersInMatch.map(p => <option key={p._id} value={p._id}>{p.profile.name}</option>)}
+                    </select>
                 </div>
                 <div className="flex justify-end gap-4 mt-6">
                     <button onClick={onClose} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancel</button>
-                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Save</button>
+                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!selectedPlayerId}>Save</button>
                 </div>
             </div>
         </div>
