@@ -170,17 +170,17 @@ const TournamentPage: React.FC = () => {
 
     return (
         <div className="bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg">
-            <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
+            <div className="flex flex-col text-center md:text-left md:flex-row items-center gap-6 mb-6">
                  {tournament.logoUrl ? (
-                    <img src={tournament.logoUrl} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover" />
+                    <img src={tournament.logoUrl} alt={tournament.name} className="w-24 h-24 rounded-full border-4 border-purple-500 object-cover flex-shrink-0" />
                 ) : (
-                    <div className="w-24 h-24 rounded-full border-4 border-purple-500 bg-gray-700 flex items-center justify-center">
+                    <div className="w-24 h-24 rounded-full border-4 border-purple-500 bg-gray-700 flex items-center justify-center flex-shrink-0">
                         <span className="text-4xl font-bold text-gray-500">{tournament.name.charAt(0)}</span>
                     </div>
                 )}
                 <div className="flex-grow">
-                     <div className="flex items-center gap-4">
-                        <h1 className="text-4xl font-bold">{tournament.name}</h1>
+                     <div className="flex items-center justify-center md:justify-start gap-4">
+                        <h1 className="text-3xl sm:text-4xl font-bold">{tournament.name}</h1>
                         {isAdmin && (
                             <button onClick={() => setIsEditModalOpen(true)} className="text-gray-400 hover:text-white" title="Edit Tournament Details">
                                 <EditIcon />
@@ -188,7 +188,7 @@ const TournamentPage: React.FC = () => {
                         )}
                     </div>
                     {isAdmin && (
-                        <div className="mt-2">
+                        <div className="mt-2 flex justify-center md:justify-start">
                             <span className="text-gray-400">Invite Code: </span>
                             <span onClick={copyInviteCode} className="font-mono bg-gray-700 text-purple-400 px-3 py-1 rounded cursor-pointer hover:bg-gray-600 flex items-center gap-2">
                                 {tournament.inviteCode}
@@ -209,7 +209,7 @@ const TournamentPage: React.FC = () => {
                 <div className="bg-gray-700 p-4 rounded-lg mb-6">
                     <h3 className="text-lg font-semibold mb-3">Admin Controls</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                             <input
                                 type="text"
                                 value={teamIdToAdd}
@@ -217,9 +217,9 @@ const TournamentPage: React.FC = () => {
                                 placeholder="Enter Team ID or Invite Code"
                                 className="w-full bg-gray-800 text-white p-2 rounded border border-gray-600"
                             />
-                            <button onClick={handleAddTeam} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!teamIdToAdd}>Add Team</button>
+                            <button onClick={handleAddTeam} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex-shrink-0" disabled={!teamIdToAdd}>Add Team</button>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start">
                             <button onClick={handleAutoSchedule} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Auto-Schedule</button>
                             <button onClick={() => setIsMatchModalOpen(true)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg">Add Match Manually</button>
                         </div>
@@ -228,9 +228,9 @@ const TournamentPage: React.FC = () => {
             )}
 
             <div className="border-b border-gray-700 mb-6">
-                <nav className="flex space-x-4">
+                <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto whitespace-nowrap pb-2">
                     {(['fixtures', 'table', 'leaders', 'teams'] as Tab[]).map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab)} className={`capitalize py-2 px-4 font-semibold rounded-t-lg ${activeTab === tab ? 'bg-gray-700 text-green-400' : 'text-gray-400 hover:bg-gray-700/50'}`}>
+                        <button key={tab} onClick={() => setActiveTab(tab)} className={`capitalize py-2 px-3 sm:px-4 font-semibold rounded-t-lg text-sm sm:text-base ${activeTab === tab ? 'bg-gray-700 text-green-400' : 'text-gray-400 hover:bg-gray-700/50'}`}>
                             {tab}
                         </button>
                     ))}
@@ -387,47 +387,56 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                 )}
                                 </div>
                             </div>
-                            <div className="flex items-center justify-between mt-2">
-                                <Link to={`/team/${teamA._id}`} className="flex items-center gap-3 w-2/5 hover:opacity-80">
-                                    {teamA.logoUrl ? (
-                                        <img src={teamA.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamA.name}/>
+
+                            <div className="sm:flex sm:items-center sm:justify-between mt-2">
+                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 flex-grow">
+                                    <Link to={`/team/${teamA._id}`} className="flex items-center gap-2 sm:gap-3 overflow-hidden hover:opacity-80">
+                                        {teamA.logoUrl ? (
+                                            <img src={teamA.logoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt={teamA.name}/>
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                                <span className="font-bold text-gray-400 text-sm">{teamA.name.charAt(0)}</span>
+                                            </div>
+                                        )}
+                                        <span className={`${getTeamClasses(teamA._id, match)} truncate`}>{teamA.name}</span>
+                                    </Link>
+
+                                    {match.status === MatchStatus.FINISHED ? (
+                                        <div className="text-center">
+                                            <div className="font-bold text-lg sm:text-xl">{match.scoreA} - {match.scoreB}</div>
+                                            <div className="text-xs text-gray-400">
+                                                {match.winnerId === null ? 'Draw' : 'Final'}
+                                                {hasPenalties && <span className="font-semibold text-gray-300"> (Pen {match.penaltyScoreA}-{match.penaltyScoreB})</span>}
+                                            </div>
+                                        </div>
+                                    ) : match.status === MatchStatus.LIVE ? (
+                                        <div className="text-center text-red-500 animate-pulse font-bold text-sm sm:text-base">LIVE<br/>({match.scoreA}-{match.scoreB})</div>
                                     ) : (
-                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
-                                            <span className="font-bold text-gray-400 text-sm">{teamA.name.charAt(0)}</span>
+                                        <div className="text-center text-gray-400 text-xs sm:text-sm flex-shrink-0">
+                                            <div>{formatDate(match.date)}</div>
+                                            <div>{match.time || 'TBD'}</div>
                                         </div>
                                     )}
-                                    <span className={getTeamClasses(teamA._id, match)}>{teamA.name}</span>
-                                </Link>
-                                {match.status === MatchStatus.FINISHED ? (
-                                     <div className="text-center">
-                                        <div className="font-bold text-xl">{match.scoreA} - {match.scoreB}</div>
-                                        <div className="text-xs text-gray-400">
-                                            {match.winnerId === null ? 'Draw' : 'Final'}
-                                            {hasPenalties && <span className="font-semibold text-gray-300"> (Pen {match.penaltyScoreA} - {match.penaltyScoreB})</span>}
-                                        </div>
-                                    </div>
-                                ) : match.status === MatchStatus.LIVE ? (
-                                    <div className="text-center text-red-500 animate-pulse">LIVE ({match.scoreA} - {match.scoreB})</div>
-                                ) : (
-                                    <div className="text-center text-gray-400 text-sm">
-                                        <div>{formatDate(match.date)}</div>
-                                        <div>{match.time || ' '}</div>
-                                    </div>
-                                )}
-                                <Link to={`/team/${teamB._id}`} className="flex items-center gap-3 w-2/5 justify-end hover:opacity-80">
-                                    <span className={`${getTeamClasses(teamB._id, match)} text-right`}>{teamB.name}</span>
-                                    {teamB.logoUrl ? (
-                                        <img src={teamB.logoUrl} className="w-8 h-8 rounded-full object-cover" alt={teamB.name}/>
-                                    ) : (
-                                        <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
-                                            <span className="font-bold text-gray-400 text-sm">{teamB.name.charAt(0)}</span>
-                                        </div>
-                                    )}
-                                </Link>
+
+                                    <Link to={`/team/${teamB._id}`} className="flex items-center gap-2 sm:gap-3 justify-end overflow-hidden hover:opacity-80">
+                                        <span className={`${getTeamClasses(teamB._id, match)} text-right truncate`}>{teamB.name}</span>
+                                        {teamB.logoUrl ? (
+                                            <img src={teamB.logoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt={teamB.name}/>
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-full bg-gray-600 flex-shrink-0 flex items-center justify-center">
+                                                <span className="font-bold text-gray-400 text-sm">{teamB.name.charAt(0)}</span>
+                                            </div>
+                                        )}
+                                    </Link>
+                                </div>
+
                                 {isAdmin && match.status === MatchStatus.SCHEDULED && (
-                                    <button onClick={(e) => { e.stopPropagation(); handleStartMatch(match._id); }} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded text-sm ml-4">Start</button>
+                                    <div className="text-center mt-3 sm:mt-0 sm:ml-4 flex-shrink-0">
+                                        <button onClick={(e) => { e.stopPropagation(); handleStartMatch(match._id); }} className="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-4 rounded text-sm w-full sm:w-auto">Start</button>
+                                    </div>
                                 )}
                             </div>
+
                              {viewingDetailsMatchId === match._id && (
                                 <div className="mt-4 border-t border-gray-600 pt-3 text-sm">
                                     <h4 className="font-bold mb-2">Match Timeline:</h4>
@@ -574,24 +583,26 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
 
     return (
         <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left text-sm">
                 <thead className="bg-gray-700">
                     <tr>
-                        <th className="p-3">Team</th>
-                        <th className="p-3">P</th>
-                        <th className="p-3">W</th>
-                        <th className="p-3">D</th>
-                        <th className="p-3">L</th>
-                        <th className="p-3">GD</th>
-                        <th className="p-3">Pts</th>
+                        <th className="p-2 sm:p-3">Team</th>
+                        <th className="p-2 sm:p-3">P</th>
+                        <th className="p-2 sm:p-3">W</th>
+                        <th className="p-2 sm:p-3">D</th>
+                        <th className="p-2 sm:p-3">L</th>
+                        <th className="p-2 sm:p-3 hidden sm:table-cell">GF</th>
+                        <th className="p-2 sm:p-3 hidden sm:table-cell">GA</th>
+                        <th className="p-2 sm:p-3">GD</th>
+                        <th className="p-2 sm:p-3">Pts</th>
                     </tr>
                 </thead>
                 <tbody>
                     {tableData.map((t, i) => (
                         <tr key={t._id} className="border-b border-gray-700">
-                            <td className="p-3">
+                            <td className="p-2 sm:p-3">
                                 <Link to={`/team/${t._id}`} className="flex items-center gap-2 font-bold hover:opacity-80">
-                                    <span className="w-6">{i+1}</span> 
+                                    <span className="w-6 text-center flex-shrink-0">{i+1}</span> 
                                     {t.logoUrl ? (
                                         <img src={t.logoUrl} alt={t.name} className="w-6 h-6 rounded-full object-cover"/> 
                                     ) : (
@@ -599,15 +610,18 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
                                             <span className="font-bold text-gray-400 text-xs">{t.name.charAt(0)}</span>
                                         </div>
                                     )}
-                                    {t.name}
+                                    <span className="hidden sm:inline">{t.name}</span>
+                                    <span className="sm:hidden">{t.name.substring(0, 3).toUpperCase()}</span>
                                 </Link>
                             </td>
-                            <td className="p-3">{t.p}</td>
-                            <td className="p-3">{t.w}</td>
-                            <td className="p-3">{t.d}</td>
-                            <td className="p-3">{t.l}</td>
-                            <td className="p-3">{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
-                            <td className="p-3 font-bold">{t.pts}</td>
+                            <td className="p-2 sm:p-3">{t.p}</td>
+                            <td className="p-2 sm:p-3">{t.w}</td>
+                            <td className="p-2 sm:p-3">{t.d}</td>
+                            <td className="p-2 sm:p-3">{t.l}</td>
+                            <td className="p-2 sm:p-3 hidden sm:table-cell">{t.gf}</td>
+                            <td className="p-2 sm:p-3 hidden sm:table-cell">{t.ga}</td>
+                            <td className="p-2 sm:p-3">{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
+                            <td className="p-2 sm:p-3 font-bold">{t.pts}</td>
                         </tr>
                     ))}
                 </tbody>
