@@ -1,11 +1,25 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import { MatchStatus, Team, Match, User, Card, Goal, CardType, Tournament } from '../types';
-import { EditIcon, ClipboardCopyIcon, TrophyIcon, CardYellowIcon, CardRedIcon, FootballIcon } from './common/Icons';
+import { EditIcon, ClipboardCopyIcon, TrophyIcon, CardYellowIcon, CardRedIcon, FootballIcon, TrashIcon } from './common/Icons';
 
 type Tab = 'fixtures' | 'table' | 'leaders' | 'teams';
+
+const formatDate = (dateString: string | undefined | null): string => {
+    if (!dateString) return 'TBD';
+    try {
+        // Add T00:00:00 to handle timezone properly, assuming date is in UTC.
+        const date = new Date(dateString + 'T00:00:00');
+        const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+        // Replace spaces with hyphens for the desired format "12-Sep-2025"
+        return new Intl.DateTimeFormat('en-GB', options).format(date).replace(/ /g, '-').toLowerCase();
+    } catch (e) {
+        return dateString; // Fallback to original string if format is invalid
+    }
+};
 
 const fileToDataUri = (file: File, maxSize = 256): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -52,7 +66,7 @@ const fileToDataUri = (file: File, maxSize = 256): Promise<string> => {
 
 const TournamentPage: React.FC = () => {
     const { tournamentId } = useParams<{ tournamentId: string }>();
-    const { getTournamentById, currentUser, addTeamToTournament, scheduleMatches, startMatch, addMatchManually, updateMatchDetails, setPlayerOfTheMatch, tournaments, updateTournament } = useAppContext();
+    const { getTournamentById, currentUser, addTeamToTournament, scheduleMatches, startMatch, addMatchManually, updateMatchDetails, deleteMatch, setPlayerOfTheMatch, tournaments, updateTournament } = useAppContext();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
@@ -141,9 +155,9 @@ const TournamentPage: React.FC = () => {
         }
     };
 
-    const handleSetPotm = async (playerId: string) => {
+    const handleSetPotm = async (details: { playerId?: string, playerName?: string }) => {
         if (potmModalMatch && tournamentId) {
-            await setPlayerOfTheMatch(tournamentId, potmModalMatch._id, playerId);
+            await setPlayerOfTheMatch(tournamentId, potmModalMatch._id, details);
             setPotmModalMatch(null);
         }
     };
@@ -224,9 +238,9 @@ const TournamentPage: React.FC = () => {
             </div>
             
             {activeTab === 'teams' && <TeamsTab teams={tournamentTeams} />}
-            {activeTab === 'fixtures' && <FixturesTab matches={tournament.matches} isAdmin={isAdmin} tournamentId={tournament._id} startMatch={startMatch} onEditMatch={setEditingMatch} onSetPlayerOfTheMatch={setPotmModalMatch} />}
+            {activeTab === 'fixtures' && <FixturesTab matches={tournament.matches} isAdmin={isAdmin} tournamentId={tournament._id} startMatch={startMatch} deleteMatch={deleteMatch} onEditMatch={setEditingMatch} onSetPlayerOfTheMatch={setPotmModalMatch} />}
             {activeTab === 'table' && <PointsTableTab matches={tournament.matches} teams={tournamentTeams} />}
-            {activeTab === 'leaders' && <LeadersTab matches={tournament.matches} teams={tournamentTeams} />}
+            {activeTab === 'leaders' && <LeadersTab matches={tournament.matches} />}
 
             {editingMatch && <EditMatchModal match={editingMatch} teams={tournamentTeams} onClose={() => setEditingMatch(null)} onSave={handleUpdateMatch} />}
             {potmModalMatch && <PlayerOfTheMatchModal match={potmModalMatch} tournamentTeams={tournament.teams} onClose={() => setPotmModalMatch(null)} onSave={handleSetPotm} />}
@@ -309,13 +323,19 @@ const TeamsTab: React.FC<{ teams: Team[] }> = ({ teams }) => (
     </div>
 );
 
-const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: string, startMatch: (tournId: string, matchId: string) => Promise<void>, onEditMatch: (match: Match) => void, onSetPlayerOfTheMatch: (match: Match) => void }> = ({ matches, isAdmin, tournamentId, startMatch, onEditMatch, onSetPlayerOfTheMatch }) => {
+const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: string, startMatch: (tournId: string, matchId: string) => Promise<void>, deleteMatch: (tournId: string, matchId: string) => Promise<void>, onEditMatch: (match: Match) => void, onSetPlayerOfTheMatch: (match: Match) => void }> = ({ matches, isAdmin, tournamentId, startMatch, deleteMatch, onEditMatch, onSetPlayerOfTheMatch }) => {
     const navigate = useNavigate();
     const [viewingDetailsMatchId, setViewingDetailsMatchId] = useState<string | null>(null);
 
     const handleStartMatch = async (matchId: string) => {
         await startMatch(tournamentId, matchId);
         navigate(`/match/${matchId}/score?tournamentId=${tournamentId}`);
+    };
+
+    const handleDeleteMatch = async (matchId: string) => {
+        if (window.confirm("Are you sure you want to delete this match? This action cannot be undone and will affect standings.")) {
+            await deleteMatch(tournamentId, matchId);
+        }
     };
 
     const getTeamClasses = (teamId: string, match: Match): string => {
@@ -340,6 +360,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                     const teamB = match.teamBId;
                     if (!teamA || !teamB) return null;
                     const potm = match.playerOfTheMatchId;
+                    const potmName = potm?.profile?.name || match.playerOfTheMatchName;
                     const timelineEvents = getTimelineEvents(match);
                     const hasPenalties = typeof match.penaltyScoreA === 'number' && typeof match.penaltyScoreB === 'number';
                     
@@ -358,6 +379,11 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                 <div className="flex items-center gap-2">
                                 {isAdmin && match.status === MatchStatus.SCHEDULED && (
                                     <button onClick={(e) => { e.stopPropagation(); onEditMatch(match); }} className="text-gray-400 hover:text-white"><EditIcon /></button>
+                                )}
+                                {isAdmin && (
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteMatch(match._id); }} className="text-gray-400 hover:text-red-500">
+                                        <TrashIcon className="h-4 w-4" />
+                                    </button>
                                 )}
                                 </div>
                             </div>
@@ -384,7 +410,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                     <div className="text-center text-red-500 animate-pulse">LIVE ({match.scoreA} - {match.scoreB})</div>
                                 ) : (
                                     <div className="text-center text-gray-400 text-sm">
-                                        <div>{match.date || 'TBD'}</div>
+                                        <div>{formatDate(match.date)}</div>
                                         <div>{match.time || ' '}</div>
                                     </div>
                                 )}
@@ -411,35 +437,31 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                 if (event.eventType === 'goal') {
                                                     const goal = event as Goal & { eventType: 'goal' };
                                                     const scorer = goal.scorerId;
+                                                    const scorerName = scorer?.profile?.name || goal.scorerName || 'Unknown Player';
                                                     const assister = goal.assistId;
+                                                    const assisterName = assister?.profile?.name || goal.assistName;
                                                     const benefitingTeam = goal.teamId === teamA._id ? teamA : teamB;
                                                     return (
                                                         <li key={`goal-${index}`} className="flex items-center gap-2">
                                                             <span className="font-bold text-green-400">⚽</span>
                                                             <span>
                                                                 Goal for <Link to={`/team/${benefitingTeam._id}`} className="font-semibold hover:underline">{benefitingTeam.name}</Link>.
-                                                                {scorer && scorer.profile ? (
-                                                                    <> Scored by <Link to={`/player/${scorer._id}`} className="font-semibold hover:underline">{scorer.profile.name}</Link></>
-                                                                ) : ( ' Scorer details unavailable.' )}
+                                                                Scored by {scorer ? <Link to={`/player/${scorer._id}`} className="font-semibold hover:underline">{scorerName}</Link> : <span className="font-semibold">{scorerName}</span>}
                                                                 {goal.isOwnGoal && <span className="text-red-400 font-semibold"> (OG)</span>}.
-                                                                {assister && assister.profile && <span className="text-gray-400"> (A: <Link to={`/player/${assister._id}`} className="hover:underline">{assister.profile.name}</Link>)</span>}
+                                                                {assisterName && <span className="text-gray-400"> (A: {assister ? <Link to={`/player/${assister._id}`} className="hover:underline">{assisterName}</Link> : assisterName})</span>}
                                                             </span>
                                                         </li>
                                                     );
                                                 } else {
                                                     const card = event as Card & { eventType: 'card' };
                                                     const player = card.playerId;
+                                                    const playerName = player?.profile?.name || card.playerName || 'Unknown Player';
                                                     return (
                                                         <li key={`card-${index}`} className="flex items-center gap-2">
                                                             {card.type === CardType.YELLOW ? <CardYellowIcon /> : <CardRedIcon />}
                                                             <span>
-                                                                {player && player.profile ? (
-                                                                    <>
-                                                                        <Link to={`/player/${player._id}`} className="font-semibold hover:underline">{player.profile.name}</Link> received a {card.type} Card.
-                                                                    </>
-                                                                ) : (
-                                                                    `A ${card.type} Card was given to a player whose details are unavailable.`
-                                                                )}
+                                                                {player ? <Link to={`/player/${player._id}`} className="font-semibold hover:underline">{playerName}</Link> : <span className="font-semibold">{playerName}</span>}
+                                                                {' '}received a {card.type} Card.
                                                             </span>
                                                         </li>
                                                     );
@@ -456,17 +478,26 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                     
                                     <div className="mt-4">
                                         <h4 className="font-bold mb-2 flex items-center gap-2"><TrophyIcon className="text-yellow-400 w-5 h-5" /> Player of the Match</h4>
-                                        {potm && potm.profile ? (
-                                            <Link to={`/player/${potm._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
-                                                {potm.profile.imageUrl ? (
-                                                    <img src={potm.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
-                                                ) : (
-                                                     <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
-                                                        <span className="text-lg font-bold text-gray-400">{potm.profile.name.charAt(0)}</span>
+                                        {potmName ? (
+                                            potm ? (
+                                                <Link to={`/player/${potm._id}`} className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit hover:bg-gray-900 transition-colors">
+                                                    {potm.profile.imageUrl ? (
+                                                        <img src={potm.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={potm.profile.name}/>
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                                                            <span className="text-lg font-bold text-gray-400">{potm.profile.name.charAt(0)}</span>
+                                                        </div>
+                                                    )}
+                                                    <span className="font-bold">{potmName}</span>
+                                                </Link>
+                                            ) : (
+                                                 <div className="flex items-center gap-3 bg-gray-900/50 p-2 rounded-lg w-fit">
+                                                    <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                                                        <span className="text-lg font-bold text-gray-400">?</span>
                                                     </div>
-                                                )}
-                                                <span className="font-bold">{potm.profile.name}</span>
-                                            </Link>
+                                                    <span className="font-bold">{potmName}</span>
+                                                </div>
+                                            )
                                         ) : (
                                             <p className="text-gray-400">Not selected yet.</p>
                                         )}
@@ -475,7 +506,7 @@ const FixturesTab: React.FC<{ matches: Match[], isAdmin: boolean, tournamentId: 
                                                 onClick={(e) => { e.stopPropagation(); onSetPlayerOfTheMatch(match); }}
                                                 className="mt-2 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-xs"
                                             >
-                                                {match.playerOfTheMatchId ? 'Change' : 'Select'} POTM
+                                                {potmName ? 'Change' : 'Select'} POTM
                                             </button>
                                         )}
                                     </div>
@@ -585,60 +616,85 @@ const PointsTableTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches
     );
 };
 
-const LeadersTab: React.FC<{ matches: Match[], teams: Team[] }> = ({ matches, teams }) => {
+const LeadersTab: React.FC<{ matches: Match[] }> = ({ matches }) => {
     const { topScorers, topAssisters } = useMemo(() => {
-        const goalCounts: { [key: string]: { player: User, goals: number } } = {};
-        const assistCounts: { [key: string]: { player: User, assists: number } } = {};
+        const goalCounts: { [key: string]: { player?: User, name: string, goals: number } } = {};
+        const assistCounts: { [key: string]: { player?: User, name: string, assists: number } } = {};
 
         matches.forEach(m => {
             m.goals.forEach(g => {
-                if (g.scorerId && !g.isOwnGoal) {
-                    if (!goalCounts[g.scorerId._id]) {
-                        goalCounts[g.scorerId._id] = { player: g.scorerId, goals: 0 };
+                // Process scorers
+                if (g.scorerId && g.scorerId.profile && !g.isOwnGoal) {
+                    const key = g.scorerId._id;
+                    if (!goalCounts[key]) {
+                        goalCounts[key] = { player: g.scorerId, name: g.scorerId.profile.name, goals: 0 };
                     }
-                    goalCounts[g.scorerId._id].goals++;
+                    goalCounts[key].goals++;
+                } else if (g.scorerName && !g.isOwnGoal) {
+                    const key = g.scorerName.trim().toLowerCase();
+                    if (!goalCounts[key]) {
+                        goalCounts[key] = { name: g.scorerName.trim(), goals: 0 };
+                    }
+                    goalCounts[key].goals++;
                 }
-                if(g.assistId) {
-                    if (!assistCounts[g.assistId._id]) {
-                        assistCounts[g.assistId._id] = { player: g.assistId, assists: 0 };
+
+                // Process assists
+                if (g.assistId && g.assistId.profile) {
+                    const key = g.assistId._id;
+                    if (!assistCounts[key]) {
+                        assistCounts[key] = { player: g.assistId, name: g.assistId.profile.name, assists: 0 };
                     }
-                    assistCounts[g.assistId._id].assists++;
+                    assistCounts[key].assists++;
+                } else if (g.assistName) {
+                    const key = g.assistName.trim().toLowerCase();
+                    if (!assistCounts[key]) {
+                        assistCounts[key] = { name: g.assistName.trim(), assists: 0 };
+                    }
+                    assistCounts[key].assists++;
                 }
             });
         });
         
         const sortedScorers = Object.values(goalCounts)
-            .filter(item => item.player && item.player.profile)
             .sort((a, b) => b.goals - a.goals)
             .slice(0, 10);
 
         const sortedAssisters = Object.values(assistCounts)
-            .filter(item => item.player && item.player.profile)
             .sort((a, b) => b.assists - a.assists)
             .slice(0, 10);
             
         return { topScorers: sortedScorers, topAssisters: sortedAssisters };
-    }, [matches, teams]);
+    }, [matches]);
 
-    const Leaderboard: React.FC<{title: string; data: { player: User, [key: string]: any }[], metric: string}> = ({title, data, metric}) => {
+    const Leaderboard: React.FC<{title: string; data: { player?: User, name: string, [key: string]: any }[], metric: string}> = ({title, data, metric}) => {
         return (
             <div className="bg-gray-700 p-4 rounded-lg">
                 <h4 className="text-lg font-bold mb-3">{title}</h4>
                 <ul className="space-y-2">
                     {data.map((item, index) => (
-                        <li key={item.player._id} className="flex items-center justify-between text-sm p-2 rounded-md bg-gray-800/50">
-                            <Link to={`/player/${item.player._id}`} className="flex items-center gap-3 hover:underline">
-                                <span className="font-bold w-6 text-center">{index + 1}</span>
-                                {item.player.profile.imageUrl ? (
-                                    <img src={item.player.profile.imageUrl} alt={item.player.profile.name} className="w-8 h-8 rounded-full object-cover"/>
-                                ) : (
-                                     <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                                        <span className="text-sm font-bold text-gray-400">{item.player.profile.name.charAt(0)}</span>
+                        <li key={(item.player?._id || item.name) + index} className="flex items-center justify-between text-sm p-2 rounded-md bg-gray-800/50">
+                            {item.player ? (
+                                <Link to={`/player/${item.player._id}`} className="flex items-center gap-3 hover:underline truncate">
+                                    <span className="font-bold w-6 text-center flex-shrink-0">{index + 1}</span>
+                                    {item.player.profile.imageUrl ? (
+                                        <img src={item.player.profile.imageUrl} alt={item.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0"/>
+                                    ) : (
+                                         <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+                                            <span className="text-sm font-bold text-gray-400">{item.name.charAt(0).toUpperCase()}</span>
+                                        </div>
+                                    )}
+                                    <span className="truncate">{item.name}</span>
+                                </Link>
+                            ) : (
+                               <div className="flex items-center gap-3 truncate">
+                                    <span className="font-bold w-6 text-center flex-shrink-0">{index + 1}</span>
+                                    <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-sm font-bold text-gray-400">{item.name.charAt(0).toUpperCase()}</span>
                                     </div>
-                                )}
-                                <span>{item.player.profile.name}</span>
-                            </Link>
-                            <span className="font-extrabold text-lg text-green-400">{item[metric]}</span>
+                                    <span className="truncate">{item.name}</span>
+                               </div>
+                            )}
+                            <span className="font-extrabold text-lg text-green-400 ml-2">{item[metric]}</span>
                         </li>
                     ))}
                      {data.length === 0 && <p className="text-center text-gray-400 py-4">No data yet.</p>}
@@ -706,19 +762,26 @@ const EditMatchModal: React.FC<{match: Match; teams: Team[]; onClose: () => void
             </div>
             </div>
         </div>
-    );
+    )
 };
 
-const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; onClose: () => void; onSave: (playerId: string) => void; }> = ({ match, tournamentTeams, onClose, onSave }) => {
+const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; onClose: () => void; onSave: (details: { playerId?: string; playerName?: string }) => void; }> = ({ match, tournamentTeams, onClose, onSave }) => {
     const [selectedPlayerId, setSelectedPlayerId] = useState(match.playerOfTheMatchId?._id || '');
-    
-    const teamA = useMemo(() => tournamentTeams.find(t => t._id === match.teamAId?._id), [tournamentTeams, match.teamAId]);
-    const teamB = useMemo(() => tournamentTeams.find(t => t._id === match.teamBId?._id), [tournamentTeams, match.teamBId]);
-    const players = useMemo(() => [...(teamA?.members || []), ...(teamB?.members || [])], [teamA, teamB]);
+    const [manualName, setManualName] = useState(match.playerOfTheMatchName || '');
+    const playersInMatch = useMemo(() => {
+        const teamA = tournamentTeams.find(t => t._id === match.teamAId._id);
+        const teamB = tournamentTeams.find(t => t._id === match.teamBId._id);
+        return [...(teamA?.members || []), ...(teamB?.members || [])].filter(p => p && p.profile);
+    }, [match, tournamentTeams]);
 
     const handleSave = () => {
-        if (selectedPlayerId) {
-            onSave(selectedPlayerId);
+        if (manualName.trim()) {
+            onSave({ playerName: manualName.trim() });
+        } else if (selectedPlayerId) {
+            onSave({ playerId: selectedPlayerId });
+        } else {
+            // Can also be used to clear the POTM
+            onSave({});
         }
     };
 
@@ -726,46 +789,46 @@ const PlayerOfTheMatchModal: React.FC<{ match: Match; tournamentTeams: Team[]; o
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
             <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
                 <h3 className="text-xl font-bold mb-4">Select Player of the Match</h3>
-                <p className="text-gray-400 mb-4">For match: {match.teamAId?.name} vs {match.teamBId?.name}</p>
-                <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
-                    {players.map(player => {
-                        if (!player || !player.profile) return null;
-                        const playerTeam = (teamA?.members || []).some(m => m._id === player._id) ? teamA : teamB;
-                        return (
-                            <label key={player._id} className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${selectedPlayerId === player._id ? 'bg-green-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
-                                <input 
-                                    type="radio" 
-                                    name="potm" 
-                                    value={player._id}
-                                    checked={selectedPlayerId === player._id}
-                                    onChange={(e) => setSelectedPlayerId(e.target.value)}
-                                    className="sr-only"
-                                />
-                                {player.profile.imageUrl ? (
-                                    <img src={player.profile.imageUrl} className="w-10 h-10 rounded-full object-cover" alt={player.profile.name}/>
-                                ) : (
-                                    <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
-                                         <span className="text-lg font-bold text-gray-400">{player.profile.name.charAt(0)}</span>
-                                    </div>
-                                )}
-                                <div>
-                                    <p className="font-bold">{player.profile.name}</p>
-                                    <p className="text-sm text-gray-300">{playerTeam?.name}</p>
-                                </div>
-                            </label>
-                        );
-                    })}
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300">Select from Roster</label>
+                        <select
+                            value={selectedPlayerId}
+                            onChange={(e) => {
+                                setSelectedPlayerId(e.target.value);
+                                if (e.target.value) setManualName('');
+                            }}
+                            className="w-full bg-gray-700 text-white p-2 rounded mt-1"
+                        >
+                            <option value="">-- Choose a player --</option>
+                            {playersInMatch.map(p => <option key={p._id} value={p._id}>{p.profile.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="text-center text-gray-400 text-sm">OR</div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300">Enter Name Manually</label>
+                        <input
+                            type="text"
+                            value={manualName}
+                            onChange={(e) => {
+                                setManualName(e.target.value);
+                                if (e.target.value) setSelectedPlayerId('');
+                            }}
+                            placeholder="e.g., Guest Player"
+                            className="w-full bg-gray-700 text-white p-2 rounded mt-1"
+                        />
+                    </div>
                 </div>
                 <div className="flex justify-end gap-4 mt-6">
                     <button onClick={onClose} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancel</button>
-                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={!selectedPlayerId}>Save</button>
+                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Save</button>
                 </div>
             </div>
         </div>
     );
 };
 
-const EditTournamentModal: React.FC<{ tournament: Tournament; onClose: () => void; onSave: (tournamentId: string, details: { name: string, logoUrl: string | null }) => Promise<void> }> = ({ tournament, onClose, onSave }) => {
+const EditTournamentModal: React.FC<{ tournament: Tournament; onClose: () => void; onSave: (tournId: string, details: { name: string, logoUrl: string | null }) => Promise<void> }> = ({ tournament, onClose, onSave }) => {
     const [name, setName] = useState(tournament.name);
     const [logo, setLogo] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(tournament.logoUrl);
@@ -781,7 +844,7 @@ const EditTournamentModal: React.FC<{ tournament: Tournament; onClose: () => voi
 
     const handleSave = async () => {
         setIsLoading(true);
-        let logoUrl = tournament.logoUrl;
+        let logoUrl: string | null = tournament.logoUrl;
         if (logo) {
             logoUrl = await fileToDataUri(logo);
         }
